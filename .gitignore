@@ -1,0 +1,18 @@
+# Cargo
+/target
+/target-gen
+**/*.rs.bk
+
+# Nix build outputs
+/result
+/result-*
+.direnv
+
+# Symlinks materialised by the devshell (not vendored)
+/third_party/midnight-ledger
+/third_party/compact-runtime-rs
+
+# Editor / OS
+.idea
+.vscode
+.DS_Store
