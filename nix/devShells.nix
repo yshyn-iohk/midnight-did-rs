@@ -1,7 +1,7 @@
 { ... }:
 {
   perSystem =
-    { pkgs, midnightDidRsLib, midnightLedgerSrc, compactPkg, ... }:
+    { pkgs, midnightDidRsLib, midnightLedgerSrc, compactRuntimeRsSrc, compactPkg, ... }:
     let
       inherit (midnightDidRsLib.rustTools) rust;
     in
@@ -24,6 +24,17 @@
           TARGET="${midnightLedgerSrc}"
           LINK="$ROOT_DIR/third_party/midnight-ledger"
           mkdir -p "$ROOT_DIR/third_party"
+          if [ -L "$LINK" ] && [ "$(readlink "$LINK")" = "$TARGET" ]; then
+            :
+          else
+            rm -rf "$LINK"
+            ln -s "$TARGET" "$LINK"
+            echo "Linked $LINK -> $TARGET"
+          fi
+
+          # Materialize third_party/compact-runtime-rs as a symlink to compact's runtime-rs subtree.
+          TARGET="${compactRuntimeRsSrc}"
+          LINK="$ROOT_DIR/third_party/compact-runtime-rs"
           if [ -L "$LINK" ] && [ "$(readlink "$LINK")" = "$TARGET" ]; then
             :
           else

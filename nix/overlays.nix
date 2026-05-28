@@ -1,11 +1,13 @@
-{ ... }:
+{ inputs, ... }:
 {
   perSystem =
-    { pkgs, midnightDidRsLib, ... }:
+    { pkgs, midnightDidRsLib, system, ... }:
     {
-      # Nothing to declare at flake-module level for now. The symlink to
-      # third_party/midnight-ledger is materialised by the devShells shellHook
-      # using midnightDidRsLib.sources.midnight-ledger.
-      _module.args.midnightLedgerSrc = midnightDidRsLib.sources.midnight-ledger;
+      # Symlinks to third_party/midnight-ledger and third_party/compact-runtime-rs are
+      # materialised by the devShells shellHook using these source paths.
+      _module.args = {
+        midnightLedgerSrc    = midnightDidRsLib.sources.midnight-ledger;
+        compactRuntimeRsSrc  = "${inputs.compact}/runtime-rs";
+      };
     };
 }
