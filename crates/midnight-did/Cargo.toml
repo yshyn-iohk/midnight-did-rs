@@ -1,0 +1,12 @@
+[package]
+name         = "midnight-did"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+authors.workspace      = true
+repository.workspace   = true
+description  = "Native Rust implementation of the Midnight DID Method."
+
+[lib]
+path = "src/lib.rs"
