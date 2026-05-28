@@ -10,6 +10,10 @@
     nixpkgs.url      = "github:NixOS/nixpkgs/nixpkgs-unstable";
     rust-overlay.url = "github:oxalica/rust-overlay";
     flake-parts.url  = "github:hercules-ci/flake-parts";
+    midnight-ledger = {
+      url = "github:yshyn-iohk/midnight-ledger/dioxus-vc-demo";
+      flake = false;
+    };
   };
 
   outputs =
@@ -22,6 +26,7 @@
 
       imports = [
         ./nix/devShells.nix
+        ./nix/overlays.nix
       ];
 
       perSystem =
@@ -37,6 +42,9 @@
               rustTools = import ./nix/rustTools.nix {
                 rust-bin     = (import nixpkgs { inherit system; overlays = [ (import rust-overlay) ]; }).rust-bin;
                 rust-overlay = rust-overlay;
+              };
+              sources = {
+                midnight-ledger = inputs.midnight-ledger;
               };
             };
           };

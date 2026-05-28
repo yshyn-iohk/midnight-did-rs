@@ -18,6 +18,23 @@
         "type": "github"
       }
     },
+    "midnight-ledger": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1779981625,
+        "narHash": "sha256-By8iBnSC5tVRpF18dxZJyZDQjNn9Kw4yOBCsyml2C6s=",
+        "owner": "yshyn-iohk",
+        "repo": "midnight-ledger",
+        "rev": "591a31700f8956744227211b96f5594a91400388",
+        "type": "github"
+      },
+      "original": {
+        "owner": "yshyn-iohk",
+        "ref": "dioxus-vc-demo",
+        "repo": "midnight-ledger",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1779877693,
@@ -68,6 +85,7 @@
     "root": {
       "inputs": {
         "flake-parts": "flake-parts",
+        "midnight-ledger": "midnight-ledger",
         "nixpkgs": "nixpkgs",
         "rust-overlay": "rust-overlay"
       }
