@@ -1,20 +1,20 @@
 { ... }:
 {
   perSystem =
-    { pkgs, midnightDidRsLib, midnightLedgerSrc, ... }:
+    { pkgs, midnightDidRsLib, midnightLedgerSrc, compactPkg, ... }:
     let
       inherit (midnightDidRsLib.rustTools) rust;
     in
     {
       devShells.default = pkgs.mkShell {
-        packages = with pkgs; [
+        packages = [ compactPkg ] ++ (with pkgs; [
           rust
           just
           taplo
           cargo-nextest
           git
           jq
-        ];
+        ]);
 
         shellHook = ''
           export ROOT_DIR=$(${pkgs.git}/bin/git rev-parse --show-toplevel)

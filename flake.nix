@@ -14,6 +14,9 @@
       url = "github:yshyn-iohk/midnight-ledger/dioxus-vc-demo";
       flake = false;
     };
+    compact = {
+      url = "github:yshyn-iohk/compact/codegen-rust";
+    };
   };
 
   outputs =
@@ -27,6 +30,7 @@
       imports = [
         ./nix/devShells.nix
         ./nix/overlays.nix
+        ./nix/compact.nix
       ];
 
       perSystem =
