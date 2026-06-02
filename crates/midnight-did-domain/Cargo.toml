@@ -1,0 +1,20 @@
+[package]
+name                   = "midnight-did-domain"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+authors.workspace      = true
+repository.workspace   = true
+description            = "Pure-data domain types for the Midnight DID Method (DID Document, resolver/registrar traits, offchain MOD1 frame, etc.)."
+
+[dependencies]
+serde      = { workspace = true }
+serde_json = { workspace = true }
+hex        = { workspace = true }
+thiserror  = "2"
+url        = "2"
+base64     = "0.22"
+blake2     = "0.10"
+
+[dev-dependencies]
