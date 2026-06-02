@@ -1,0 +1,20 @@
+[package]
+name                   = "midnight-did-api"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+authors.workspace      = true
+repository.workspace   = true
+description            = "Operation, resolution, and ledger-mapping API layer for the Midnight DID Method. Built on top of midnight-did-domain; abstracts the on-chain contract behind a DidContract trait so the layer is testable without the runtime/halo2 stack."
+
+[dependencies]
+midnight-did-domain = { workspace = true }
+serde               = { workspace = true }
+serde_json          = { workspace = true }
+hex                 = { workspace = true }
+thiserror           = "2"
+async-trait         = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "sync"] }
