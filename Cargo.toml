@@ -21,6 +21,7 @@ midnight-serialize        = { path = "third_party/midnight-ledger/serialize" }
 midnight-storage          = { path = "third_party/midnight-ledger/storage" }
 midnight-transient-crypto = { path = "third_party/midnight-ledger/transient-crypto" }
 midnight-zkir             = { path = "third_party/midnight-ledger/zkir" }
+midnight-zswap            = { path = "third_party/midnight-ledger/zswap" }
 # compact's runtime helper crate (path-mounted by devshell into third_party/compact-runtime-rs)
 compact-runtime           = { path = "third_party/compact-runtime-rs" }
 # common

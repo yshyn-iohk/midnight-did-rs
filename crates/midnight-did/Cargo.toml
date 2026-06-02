@@ -10,3 +10,23 @@ description  = "Native Rust implementation of the Midnight DID Method."
 
 [lib]
 path = "src/lib.rs"
+
+[dependencies]
+# The compact-runtime symbol the generated contract code calls into. The
+# `path = "third_party/compact-runtime-rs"` (declared in the workspace) is
+# materialised by `nix develop`'s shellHook from the codegen-rust compact
+# flake input.
+compact-runtime = { workspace = true }
+
+# midnight-ledger workspace deps the generated lib.rs (transitively, via
+# compact-runtime) needs at link time. Listed explicitly so `cargo build`
+# fails with a clearer error if a symlink under third_party/midnight-ledger/
+# goes missing.
+midnight-base-crypto      = { workspace = true }
+midnight-coin-structure   = { workspace = true }
+midnight-onchain-runtime  = { workspace = true }
+midnight-onchain-state    = { workspace = true }
+midnight-onchain-vm       = { workspace = true }
+midnight-serialize        = { workspace = true }
+midnight-storage          = { workspace = true }
+midnight-transient-crypto = { workspace = true }
