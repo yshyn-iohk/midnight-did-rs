@@ -1,0 +1,38 @@
+[package]
+name                   = "midnight-did-uniffi"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+authors.workspace      = true
+repository.workspace   = true
+description            = "UniFFI bindings exposing the Midnight DID async API to Swift / Kotlin / Python."
+publish                = false
+
+[lib]
+name       = "midnight_did_uniffi"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[features]
+# Pull in the `uniffi-bindgen` CLI tool — required to run
+# `cargo run --bin uniffi-bindgen` for generating Swift / Kotlin source.
+cli = ["uniffi/cli"]
+
+[dependencies]
+midnight-did-domain = { workspace = true }
+midnight-did-api    = { workspace = true }
+uniffi              = { version = "0.29", features = ["tokio"] }
+async-trait         = "0.1"
+tokio               = { version = "1", features = ["sync", "rt", "rt-multi-thread", "macros"] }
+serde               = { workspace = true }
+serde_json          = { workspace = true }
+hex                 = { workspace = true }
+thiserror           = "2"
+
+[build-dependencies]
+uniffi = { version = "0.29", features = ["build"] }
+
+[[bin]]
+name              = "uniffi-bindgen"
+path              = "src/bin/uniffi-bindgen.rs"
+required-features = ["cli"]
