@@ -201,7 +201,7 @@ Today (2-crate world):
 | --- | --- | --- |
 | Mobile wallet (Dioxus) | `midnight-did-domain` + `midnight-did-api` + `midnight-did` | `midnight-did` is the on-chain bind; pending unblock. |
 | DID resolver | `midnight-did-domain` + `midnight-did-api` | Resolver uses `LedgerToDomain` (in api today) + ledger-reader; no wallet path. |
-| Web / wasm | `midnight-did-domain` | Domain crate is the only wasm-clean target today. Resolution requires api once api goes wasm-friendly. |
+| Web / wasm | `midnight-did-domain` + `midnight-did-api` | Both crates build cleanly against `wasm32-unknown-unknown` and are gated by a CI job that runs on every PR. The resolver path is wasm-ready; the wallet path still needs `midnight-did` which is not wasm-targetable (halo2 deps). |
 | UniFFI binding | `midnight-did-domain` + `midnight-did-api` + `midnight-did` + new `midnight-did-uniffi` | UniFFI wrapper is its own crate; reuses the rest. |
 
 After the 4-crate split:
@@ -321,6 +321,16 @@ mutations; the ninth (`did_multi_op`) validates the operation-counter
 clippy -D warnings`, and `cargo test` on the two functional crates.
 `midnight-did` stays out of CI until the upstream pin is refreshed.
 
+**Wasm build gate.** A third CI job builds `midnight-did-domain` +
+`midnight-did-api` against `wasm32-unknown-unknown` on every PR. This
+turns the architecture-doc claim "both crates are wasm-clean" from a
+promise into an enforced invariant: the moment a transitive dep
+regresses wasm support (e.g. someone pulls in a crate that uses
+`std::process` or filesystem APIs), the build fails. Pure
+`wasm32-unknown-unknown` target only — no `wasm-bindgen` / `web-sys`
+ceremony. JS interop is deferred to a future browser-side wrapper
+crate so the core stays runtime-agnostic.
+
 ---
 
 ## 7. Open questions and roadmap
@@ -360,7 +370,11 @@ Five open questions captured in the
   `midnight-did` → `midnight-did-runtime`. Introduce the umbrella
   `midnight-did` re-export.
 - Add the UniFFI wrapper crate `midnight-did-uniffi`.
-- Add a wasm-target build proof + a thin browser-side resolver crate.
+- ~~Add a wasm-target build proof~~ — done (CI `wasm-build` job
+  builds `midnight-did-domain` + `midnight-did-api` against
+  `wasm32-unknown-unknown` on every PR). Future work: a thin
+  browser-side wrapper crate (wasm-bindgen + serde-wasm-bindgen)
+  exposing the resolver path to JS.
 - Publish `midnight-did-domain` + `midnight-did-method` to crates.io
   ahead of the runtime crate (no halo2 dep, fast to ship).
 

@@ -12,10 +12,15 @@ name: CI
 # Once the flake input resolves, a follow-up will add it (likely behind a
 # `nix build` step rather than bare cargo).
 #
-# Two jobs:
-#   - pre-check: cargo fmt --check + clippy -D warnings on Linux. Fast (<3 min).
-#   - test:      cargo test --locked on Linux AND macOS to catch platform
-#                -dependent encoding / hashing / serialization bugs.
+# Three jobs:
+#   - pre-check:  cargo fmt --check + clippy -D warnings on Linux. Fast (<3 min).
+#   - test:       cargo test --locked on Linux AND macOS to catch platform
+#                 -dependent encoding / hashing / serialization bugs.
+#   - wasm-build: cargo build --target wasm32-unknown-unknown on the two
+#                 wasm-clean crates. Enforces the architecture-doc claim
+#                 that midnight-did-domain + midnight-did-api are
+#                 runtime-agnostic and free of midnight-* deps. Catches
+#                 the moment a transitive dep regresses wasm support.
 
 on:
   pull_request:
@@ -156,3 +161,55 @@ jobs:
       # silently resolving to a newer transitive dep.
       - name: Run tests (domain + api)
         run: cargo test -p midnight-did-domain -p midnight-did-api --locked
+
+  # Build the two wasm-clean crates against wasm32-unknown-unknown.
+  # The architecture doc + ADR 0001 claim that midnight-did-domain and
+  # midnight-did-api are runtime-agnostic and pull no midnight-* deps,
+  # which means they should compile to wasm without ceremony. This job
+  # enforces that claim: the moment a transitive dep regresses wasm
+  # support (e.g. someone pulls in a crate that uses std::process or
+  # filesystem APIs), the build fails here on PR.
+  #
+  # Pure wasm32-unknown-unknown target only — no wasm-bindgen, wasm-pack,
+  # or web-sys at this stage. JS interop is a separate concern (would
+  # belong in a thin browser-side wrapper crate, not the domain/api
+  # core).
+  #
+  # midnight-did is intentionally excluded — it transitively depends on
+  # halo2 / arkworks crates that do not compile to wasm. Adding it here
+  # would just rediscover that.
+  wasm-build:
+    name: WASM target build
+    needs: pre-check
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Rust toolchain (stable) with wasm32 target
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable (branch)
+        with:
+          targets: wasm32-unknown-unknown
+
+      # Shared cache for the wasm target. Keyed separately from the
+      # host target/ cache so the two do not collide.
+      - name: Cache Cargo registry and wasm target
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-wasm-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-wasm-
+
+      - name: Build wasm32-unknown-unknown (domain + api)
+        run: |
+          cargo build --target wasm32-unknown-unknown \
+            -p midnight-did-domain \
+            -p midnight-did-api \
+            --locked
