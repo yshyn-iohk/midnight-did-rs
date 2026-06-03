@@ -6,7 +6,16 @@ rust-version.workspace = true
 license.workspace      = true
 authors.workspace      = true
 repository.workspace   = true
-description            = "Operation, resolution, and ledger-mapping API layer for the Midnight DID Method. Built on top of midnight-did-domain; abstracts the on-chain contract behind a DidContract trait so the layer is testable without the runtime/halo2 stack."
+homepage               = "https://github.com/yshyn-iohk/midnight-did-rs"
+documentation          = "https://docs.rs/midnight-did-api"
+readme                 = "README.md"
+description            = "Async operation builders, DID resolver, and contract abstraction traits for the Midnight DID method."
+keywords               = ["midnight", "did", "vc", "ssi", "async"]
+categories             = ["cryptography", "asynchronous"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 midnight-did-domain = { workspace = true }

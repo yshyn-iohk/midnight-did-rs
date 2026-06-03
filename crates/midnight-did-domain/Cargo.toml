@@ -6,7 +6,16 @@ rust-version.workspace = true
 license.workspace      = true
 authors.workspace      = true
 repository.workspace   = true
-description            = "Pure-data domain types for the Midnight DID Method (DID Document, resolver/registrar traits, offchain MOD1 frame, etc.)."
+homepage               = "https://github.com/yshyn-iohk/midnight-did-rs"
+documentation          = "https://docs.rs/midnight-did-domain"
+readme                 = "README.md"
+description            = "Pure-data Rust domain layer for the Midnight DID method (W3C DID Core + MOD1 offchain encoder, no midnight-* deps)."
+keywords               = ["midnight", "did", "w3c-did", "ssi", "identity"]
+categories             = ["cryptography", "data-structures"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 serde      = { workspace = true }
