@@ -1,7 +1,8 @@
 # ADR 0006 — Runtime crate halo2 ParamsKZG API skew (unblocked, partial)
 
-**Status:** Halo2 block resolved · codegen-gap block ~halved (see ADR 0005)
-**Date:** 2026-06-04 (updated 2026-06-04 after compact flake bump)
+**Status:** Halo2 block resolved · 4-bucket codegen block: 1/4 closed,
+2/4 landed-but-blocked, 1/4 documented (this ADR)
+**Date:** 2026-06-04 (updated 2026-06-04 after Bucket-3 close)
 
 ## Context
 
@@ -149,6 +150,46 @@ be fixed inside `midnight-did-rs` without editing `generated.rs`
 The runtime crate therefore still stays not-in-CI until ADR 0005's
 runtime-export work closes these last 44 errors. The umbrella crate's
 `runtime` feature stays off-by-default.
+
+### Update (2026-06-04 cont.) — 4-bucket close attempt
+
+Compact-side work on the four buckets:
+
+| Bucket | Errors | Compact commit | Outcome in midnight-did-runtime |
+|--------|--------|----------------|----------------------------------|
+| 3 — `OpaqueString::BinaryHashRepr` impl | 14 | `3d23c9a` (runtime-rs) | **Closed.** 44 → 30 errors after flake bump. |
+| 1 — `compact_runtime::ContractAddress` FQN in `QueryContext::new` | 11 | `12e50a8` (rust-passes-emit + snapshots + regen of 23 e2e fixtures) | Landed in compactc; **takes effect only after `generated.rs` is regenerated**, which is blocked by an unrelated walker gap (see below). |
+| 4 — `Default` derive on user enums (`#[derive(...,Default)]` + `#[default]` on variant 0) | 3 | `12e50a8` (same commit as Bucket 1) | Landed in compactc; same blocker as Bucket 1. |
+| 2 — `EmbeddedGroupAffine`/`JubjubPoint` missing `FieldRepr`/`FromFieldRepr`/`BinaryHashRepr` | 16 | not landed | **Blocked by Rust orphan rule.** Both the traits (`midnight_transient_crypto::repr::{FieldRepr, FromFieldRepr}`, `midnight_base_crypto::repr::BinaryHashRepr`) and the type (`midnight_transient_crypto::curve::EmbeddedGroupAffine`) are foreign to compact-runtime. The impls would have to live either in the upstream `midnight-ledger` crates (out of scope by repo policy) or behind a newtype wrapper that the codegen emits instead of `JubjubPoint` (a larger codegen + runtime API change with risk to the 85 passing e2e tests). Deferred. |
+
+Walker gap blocking buckets 1 + 4 from taking effect:
+
+```
+$ compactc --rust --skip-zk third_party/midnight-did/packages/contract/src/did.compact …
+Exception: did.compact line 221 char 1:
+  compactc --rust: unsupported Compact construct (circuit-body-emission):
+    no walker shape matched
+  circuit body for rotateControllerKey
+```
+
+`rotateControllerKey` opens with `assertControllerCanUpdate();` — a
+call-stmt to a user-defined void circuit — which the current walker
+shapes do not match as the first statement of a multi-statement body.
+This is a separate codegen widening that belongs in
+`compiler/rust-passes-walker.ss`, scoped on its own.
+
+Pin state after the close attempt: `flake.lock` carries
+`yshyn-iohk/compact@12e50a8` — runtime-rs's `OpaqueString` BinaryHashRepr
+impl is what's actually picked up by `cargo build`. The Bucket-1 and
+Bucket-4 codegen-side fixes are inert until `generated.rs` is
+regenerated.
+
+Final error count: **30 (down from 44; -14, all OpaqueString).**
+Remaining 30 split:
+- 11 ContractAddress shadowing (Bucket 1; codegen-side fix landed,
+  awaits regen)
+- 16 EmbeddedGroupAffine (Bucket 2; deferred)
+- 3 user-enum Default (Bucket 4; codegen-side fix landed, awaits regen)
 
 ## Consequences
 
