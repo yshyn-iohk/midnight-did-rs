@@ -1,7 +1,7 @@
 # ADR 0006 — Runtime crate halo2 ParamsKZG API skew (unblocked, partial)
 
-**Status:** Halo2 block resolved · codegen-gap block remains (see ADR 0005)
-**Date:** 2026-06-04
+**Status:** Halo2 block resolved · codegen-gap block ~halved (see ADR 0005)
+**Date:** 2026-06-04 (updated 2026-06-04 after compact flake bump)
 
 ## Context
 
@@ -53,8 +53,8 @@ existing Nix flake materialisation pattern:
    `yshyn-iohk/midnight-zk@feat/v0.7-h-poly-streaming`.
 2. **`nix/overlays.nix` + `nix/devShells.nix`** — extend the shellHook
    to materialise `third_party/midnight-zk` as a symlink to the
-   Nix-store path (same pattern used for `midnight-ledger` and
-   `compact-runtime-rs`).
+   Nix-store path (same pattern used for `midnight-ledger` and the
+   compact runtime crates under `third_party/compact/`).
 3. **Root `Cargo.toml`** — `[patch.crates-io] midnight-proofs = { git, rev }`
    pointing at the same fork commit. The path-dep form was rejected
    because the fork's `proofs/Cargo.toml` uses `workspace = true`
@@ -80,20 +80,75 @@ keep passing.
 ## Remaining block — codegen gaps (covered by ADR 0005)
 
 With the halo2 surface fixed, `cargo build -p midnight-did-runtime`
-now fails on **codegen-gap** symbols that the compactc-emitted
-`generated.rs` references but `compact-runtime` does not yet export:
+initially failed on 97 **codegen-gap** symbol-not-found errors that
+the compactc-emitted `generated.rs` referenced but `compact-runtime`
+did not yet export:
 
 - `compact_runtime::BinaryHashRepr` (trait)
 - `compact_runtime::std_lib::{decode_bool, decode_bytes, persistent_hash_aligned, OpaqueString}`
 - bare `new_map(…)`, bare `MemWrite`
 
-This is exactly the surface ADR 0005 plans to fill incrementally. The
-remaining 97 errors are codegen-side, not toolchain-side — they are
-*not* tracked here; they belong with the codegen-rust upstream work.
+### Update (2026-06-04) — compact flake bump closes the symbol surface
 
-The runtime crate therefore stays not-in-CI until ADR 0005's runtime
-re-export checklist closes. The umbrella crate's `runtime` feature
-stays off-by-default.
+Bumping the `compact` flake input from the May-26 snapshot to
+`yshyn-iohk/compact@5fc3ec7d` (codegen-rust HEAD, 2026-06-02) pulled
+in the post-`std_lib` split runtime crate. **All 97 missing-symbol
+errors disappeared.**
+
+The bump required a layout change in `third_party/`:
+
+- The new `compact-runtime` Cargo.toml references its proc-macro
+  sibling via the relative path `../runtime-rs-macros`, and the
+  proc-macro crate's dev-deps include `compact-runtime = { path =
+  "../runtime-rs" }`. Cargo's eager resolution of dev-dep manifests
+  (even when the crate is only used as a path-dep) means both sibling
+  paths must exist.
+- We mirrored compact's in-repo layout: `third_party/compact/{runtime-rs,
+  runtime-rs-macros}` (was: a flat `third_party/compact-runtime-rs`).
+  The devshell `shellHook` now materialises two symlinks under
+  `third_party/compact/` from `compactRuntimeRsSrc` +
+  `compactRuntimeRsMacrosSrc`.
+- Workspace `Cargo.toml` updated: `compact-runtime = { path =
+  "third_party/compact/runtime-rs" }`.
+
+Build state after the bump:
+
+| Crate | Before flake bump | After flake bump |
+|-------|-------------------|------------------|
+| midnight-did-runtime | 97 errors (missing symbols) | 44 errors (real type/trait mismatches) |
+| all other workspace crates | green | green (no regressions) |
+
+The 44 remaining errors break down (`cargo build -p
+midnight-did-runtime 2>&1 \| grep '^error' \| sort \| uniq -c`):
+
+- **11× E0308 mismatched types** — `generated.rs` defines its own
+  `pub struct ContractAddress { … }` (line 675) that shadows
+  `compact_runtime::ContractAddress` (re-exported from
+  `midnight-coin-structure`). `QueryContext::new` expects the latter.
+  *Cause:* codegen emits a fresh struct rather than referring to the
+  runtime re-export. Belongs in compact's rust-passes, not here.
+- **8× E0277 + 8× E0599** — `EmbeddedGroupAffine` (re-exported from
+  `midnight-transient-crypto` via `compact-runtime` as `JubjubPoint`)
+  is missing `FromFieldRepr`, `binary_repr`, `binary_len`,
+  `field_repr`, `field_size`. *Cause:* the proxy / wrapper trait impls
+  for the Jubjub bundle aren't part of `compact-runtime` yet.
+- **14× E0599** — `OpaqueString` missing `binary_repr` / `binary_len`
+  (`BinaryHashRepr` trait impl). *Cause:* `OpaqueString` is exported
+  as `Default`-able and field-aligned, but the `BinaryHashRepr` impl
+  isn't wired up yet.
+- **3× E0277** — user enums (`KeyType`, `CurveType`,
+  `VerificationMethodType`) need `Default` impls. *Cause:* codegen
+  emits the enum but no `#[derive(Default)]` and no manual impl.
+
+All four buckets are **upstream issues** — either compact-rust-passes
+(emitter) or compact-runtime (trait impls / proxy plumbing). None can
+be fixed inside `midnight-did-rs` without editing `generated.rs`
+(forbidden) or the `compact-runtime` source under
+`third_party/compact/` (which is a read-only Nix-store symlink).
+
+The runtime crate therefore still stays not-in-CI until ADR 0005's
+runtime-export work closes these last 44 errors. The umbrella crate's
+`runtime` feature stays off-by-default.
 
 ## Consequences
 

@@ -12,6 +12,7 @@
 /third_party/midnight-ledger
 /third_party/midnight-zk
 /third_party/compact-runtime-rs
+/third_party/compact/
 
 # Editor / OS
 .idea

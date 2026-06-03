@@ -1,7 +1,7 @@
 { ... }:
 {
   perSystem =
-    { pkgs, midnightDidRsLib, midnightLedgerSrc, midnightZkSrc, compactRuntimeRsSrc, compactPkg, ... }:
+    { pkgs, midnightDidRsLib, midnightLedgerSrc, midnightZkSrc, compactRuntimeRsSrc, compactRuntimeRsMacrosSrc, compactPkg, ... }:
     let
       inherit (midnightDidRsLib.rustTools) rust;
     in
@@ -45,9 +45,25 @@
             echo "Linked $LINK -> $TARGET"
           fi
 
-          # Materialize third_party/compact-runtime-rs as a symlink to compact's runtime-rs subtree.
+          # Materialise compact's runtime-rs + runtime-rs-macros subtrees inside
+          # third_party/compact/, mirroring the in-repo layout so that the
+          # relative path `../runtime-rs-macros` (in compact-runtime's Cargo.toml)
+          # and `../runtime-rs` (in runtime-rs-macros' dev-deps) both resolve
+          # correctly without aliasing.
+          mkdir -p "$ROOT_DIR/third_party/compact"
+
           TARGET="${compactRuntimeRsSrc}"
-          LINK="$ROOT_DIR/third_party/compact-runtime-rs"
+          LINK="$ROOT_DIR/third_party/compact/runtime-rs"
+          if [ -L "$LINK" ] && [ "$(readlink "$LINK")" = "$TARGET" ]; then
+            :
+          else
+            rm -rf "$LINK"
+            ln -s "$TARGET" "$LINK"
+            echo "Linked $LINK -> $TARGET"
+          fi
+
+          TARGET="${compactRuntimeRsMacrosSrc}"
+          LINK="$ROOT_DIR/third_party/compact/runtime-rs-macros"
           if [ -L "$LINK" ] && [ "$(readlink "$LINK")" = "$TARGET" ]; then
             :
           else

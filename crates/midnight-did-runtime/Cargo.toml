@@ -14,9 +14,9 @@ path = "src/lib.rs"
 
 [dependencies]
 # The compact-runtime symbol the generated contract code calls into. The
-# `path = "third_party/compact-runtime-rs"` (declared in the workspace) is
+# `path = "third_party/compact/runtime-rs"` (declared in the workspace) is
 # materialised by `nix develop`'s shellHook from the codegen-rust compact
-# flake input.
+# flake input, alongside the sibling `runtime-rs-macros` crate.
 compact-runtime = { workspace = true }
 
 # midnight-ledger workspace deps the generated lib.rs (transitively, via

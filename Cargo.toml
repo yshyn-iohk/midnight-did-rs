@@ -22,8 +22,13 @@ midnight-storage          = { path = "third_party/midnight-ledger/storage" }
 midnight-transient-crypto = { path = "third_party/midnight-ledger/transient-crypto" }
 midnight-zkir             = { path = "third_party/midnight-ledger/zkir" }
 midnight-zswap            = { path = "third_party/midnight-ledger/zswap" }
-# compact's runtime helper crate (path-mounted by devshell into third_party/compact-runtime-rs)
-compact-runtime           = { path = "third_party/compact-runtime-rs" }
+# compact's runtime helper crate (path-mounted by devshell into third_party/compact/runtime-rs).
+# The sibling `third_party/compact/runtime-rs-macros` is materialised by the same
+# devshell hook because compact-runtime's manifest references it via the relative
+# path `../runtime-rs-macros`. Mirroring compact's in-repo layout (runtime-rs +
+# runtime-rs-macros as siblings) keeps cargo's relative-path resolution working
+# without alias symlinks.
+compact-runtime           = { path = "third_party/compact/runtime-rs" }
 # common
 serde      = { version = "1", features = ["derive"] }
 serde_json = "1"
