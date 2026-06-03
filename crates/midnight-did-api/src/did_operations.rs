@@ -171,10 +171,8 @@ mod tests {
     use super::*;
     use crate::contract::mock::{RecordedCall, RecordingContract};
     use crate::private_state::{InMemoryPrivateStateStore, PrivateStateSlot, restore_private_state};
-    use midnight_did_domain::{
-        did_document::{Service, ServiceEndpoint, ServiceType},
-        midnight::MidnightNetwork,
-    };
+    use midnight_did_domain::did_document::{Service, ServiceEndpoint, ServiceType};
+    use midnight_did_method::midnight_did::MidnightNetwork;
 
     const ADDR: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 

@@ -254,7 +254,7 @@ pub trait DidContract: Send + Sync {
     fn contract_address(&self) -> String;
 
     /// Network the contract is deployed on.
-    fn network(&self) -> midnight_did_domain::midnight::MidnightNetwork;
+    fn network(&self) -> midnight_did_method::midnight_did::MidnightNetwork;
 
     /// Read the public ledger state.
     async fn read_ledger(&self) -> Result<DidLedgerSnapshot, ContractError>;
@@ -372,21 +372,21 @@ pub mod mock {
     #[derive(Debug)]
     pub struct RecordingContract {
         address: String,
-        network: midnight_did_domain::midnight::MidnightNetwork,
+        network: midnight_did_method::midnight_did::MidnightNetwork,
         ledger: Mutex<DidLedgerSnapshot>,
         calls: Mutex<Vec<RecordedCall>>,
     }
 
     impl RecordingContract {
         /// Build a new recording contract with empty initial ledger state.
-        pub fn new(address: impl Into<String>, network: midnight_did_domain::midnight::MidnightNetwork) -> Self {
+        pub fn new(address: impl Into<String>, network: midnight_did_method::midnight_did::MidnightNetwork) -> Self {
             Self::with_ledger(address, network, DidLedgerSnapshot::default())
         }
 
         /// Build a recording contract seeded with a specific ledger snapshot.
         pub fn with_ledger(
             address: impl Into<String>,
-            network: midnight_did_domain::midnight::MidnightNetwork,
+            network: midnight_did_method::midnight_did::MidnightNetwork,
             ledger: DidLedgerSnapshot,
         ) -> Self {
             Self {
@@ -418,7 +418,7 @@ pub mod mock {
             self.address.clone()
         }
 
-        fn network(&self) -> midnight_did_domain::midnight::MidnightNetwork {
+        fn network(&self) -> midnight_did_method::midnight_did::MidnightNetwork {
             self.network
         }
 

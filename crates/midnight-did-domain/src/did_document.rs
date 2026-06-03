@@ -686,9 +686,7 @@ impl DidDocument {
         };
         for (index, vm) in vms.iter().enumerate() {
             let canonical = canonicalize(&vm.id.0);
-            if let std::collections::hash_map::Entry::Vacant(entry) =
-                seen_vm_ids.entry(canonical)
-            {
+            if let std::collections::hash_map::Entry::Vacant(entry) = seen_vm_ids.entry(canonical) {
                 entry.insert(index);
             } else {
                 issues.push(ValidationIssue::at(

@@ -21,9 +21,9 @@
 //! pass it explicitly. This keeps the helpers pure and testable.
 
 use crate::{contract::DidContract, error::ApiError};
-use midnight_did_domain::{
-    ledger_utils::{BoundIdField, normalize_bound_fragment_id},
-    midnight::{ContractAddress, MidnightNetwork, create_midnight_did_string, parse_contract_address},
+use midnight_did_domain::ledger_utils::{BoundIdField, normalize_bound_fragment_id};
+use midnight_did_method::midnight_did::{
+    ContractAddress, MidnightNetwork, create_midnight_did_string, parse_contract_address,
 };
 
 /// `getDidSubject(didContract)` — return the canonical

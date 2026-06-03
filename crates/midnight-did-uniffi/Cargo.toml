@@ -20,6 +20,7 @@ cli = ["uniffi/cli"]
 
 [dependencies]
 midnight-did-domain = { workspace = true }
+midnight-did-method = { workspace = true }
 midnight-did-api    = { workspace = true }
 uniffi              = { version = "0.29", features = ["tokio"] }
 async-trait         = "0.1"

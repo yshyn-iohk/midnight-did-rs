@@ -233,10 +233,8 @@ pub fn relation_set_from_state(
 mod tests {
     use super::*;
     use crate::contract::mock::RecordingContract;
-    use midnight_did_domain::{
-        did_document::{DidKeyId, DidString, ServiceEndpoint, ServiceType},
-        midnight::MidnightNetwork,
-    };
+    use midnight_did_domain::did_document::{DidKeyId, DidString, ServiceEndpoint, ServiceType};
+    use midnight_did_method::midnight_did::MidnightNetwork;
     use std::collections::BTreeMap;
 
     const ADDR: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";

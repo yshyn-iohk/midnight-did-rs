@@ -35,8 +35,8 @@ use midnight_did_domain::{
         CurveType, DidKeyId, DidString, KeyType, PublicKeyJwk, VerificationMethod, VerificationMethodRelation,
         VerificationMethodType,
     },
-    midnight::MidnightNetwork,
 };
+use midnight_did_method::midnight_did::MidnightNetwork;
 
 // Address constant chosen to match the TS test setup (32 bytes hex).
 // The TS source uses `0123…ef` ad infinitum; in Rust the API surface

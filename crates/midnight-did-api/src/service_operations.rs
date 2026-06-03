@@ -57,10 +57,8 @@ pub async fn remove_service<C: DidContract + ?Sized>(
 mod tests {
     use super::*;
     use crate::contract::mock::{RecordedCall, RecordingContract};
-    use midnight_did_domain::{
-        did_document::{ServiceEndpoint, ServiceType},
-        midnight::MidnightNetwork,
-    };
+    use midnight_did_domain::did_document::{ServiceEndpoint, ServiceType};
+    use midnight_did_method::midnight_did::MidnightNetwork;
 
     const ADDR: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 

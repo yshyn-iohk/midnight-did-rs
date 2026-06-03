@@ -41,15 +41,15 @@ use blake2::{Blake2s, Digest, digest::consts::U32};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::crypto_codecs::{CodecError, decode_base64url, encode_base64url};
-use crate::did_document::{
+use crate::midnight_did::{
+    MidnightDidError, MidnightDidString, MidnightNetwork, OffchainStateHashHex, create_midnight_did_string,
+    parse_midnight_did_string,
+};
+use midnight_did_domain::crypto_codecs::{CodecError, decode_base64url, encode_base64url};
+use midnight_did_domain::did_document::{
     CreateServiceParams, CreateVerificationMethodParams, CurveType, DidString, DocumentContext, KeyType, PublicKeyJwk,
     Service, ServiceEndpoint, ServiceType, ValidationError, VerificationMethod, VerificationMethodType, create_service,
     create_verification_method,
-};
-use crate::midnight::{
-    MidnightDidError, MidnightDidString, MidnightNetwork, OffchainStateHashHex, create_midnight_did_string,
-    parse_midnight_did_string,
 };
 
 // ---------------------------------------------------------------------------
@@ -73,12 +73,12 @@ pub const OFFCHAIN_STATE_ENCODING: &str = "midnight-offchain-did-state-v1.base64
 // ---------------------------------------------------------------------------
 
 /// 32-byte off-chain state hash (lowercase hex). Alias for the same type
-/// used by [`crate::midnight`], re-exported so the TS surface matches.
+/// used by [`crate::midnight_did`], re-exported so the TS surface matches.
 pub type OffchainStateHash = OffchainStateHashHex;
 
-/// Re-export of [`crate::midnight::parse_offchain_state_hash`] for parity
+/// Re-export of [`crate::midnight_did::parse_offchain_state_hash`] for parity
 /// with the TS module structure.
-pub use crate::midnight::parse_offchain_state_hash;
+pub use crate::midnight_did::parse_offchain_state_hash;
 
 /// Boolean flags describing which verification relationships a method
 /// participates in.
@@ -557,7 +557,7 @@ pub fn offchain_service_to_did_document_service(service: &OffchainService) -> Re
 
 /// Build the public-facing DID Document fields from an off-chain state. The
 /// returned tuple covers `(context, controller, verificationMethod, ...)`
-/// for callers that want to assemble a [`crate::did_document::DidDocument`].
+/// for callers that want to assemble a [`midnight_did_domain::did_document::DidDocument`].
 #[allow(clippy::type_complexity)]
 pub fn offchain_state_to_did_document(
     did: &MidnightDidString,
@@ -630,7 +630,7 @@ fn maybe_some<T>(values: Vec<T>) -> Option<Vec<T>> {
 }
 
 /// Output of [`offchain_state_to_did_document`]. Each field maps 1:1 to the
-/// equivalent [`crate::did_document::DidDocument`] field; the projection
+/// equivalent [`midnight_did_domain::did_document::DidDocument`] field; the projection
 /// stops short of constructing the validated document so callers can add
 /// extension keywords before final validation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -663,8 +663,8 @@ pub struct OffchainProjectedDocument {
 /// `createOffchainMidnightDidDocumentMetadata` in TS.
 pub fn create_offchain_midnight_did_document_metadata(
     state: &OffchainMidnightDidState,
-) -> crate::did_document::DidDocumentMetadata {
-    crate::did_document::DidDocumentMetadata {
+) -> midnight_did_domain::did_document::DidDocumentMetadata {
+    midnight_did_domain::did_document::DidDocumentMetadata {
         deactivated: Some(false),
         version_id: Some(state.version.to_string()),
         ..Default::default()

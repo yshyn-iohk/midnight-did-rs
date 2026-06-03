@@ -17,7 +17,7 @@
 //! `src/test/midnight.test.ts`. Only the pure-data behaviours are ported
 //! here — none of the original cases touch the chain.
 
-use midnight_did_domain::midnight::{
+use midnight_did_method::midnight_did::{
     MidnightDidError, MidnightNetwork, create_midnight_did_string, parse_contract_address, parse_midnight_did,
     parse_midnight_did_string,
 };

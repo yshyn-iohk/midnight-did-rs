@@ -31,8 +31,8 @@ use midnight_did_domain::{
         PublicKeyJwk, Service, ServiceEndpoint, ServiceEndpointArrayEntry, ServiceType, VerificationMethod,
         VerificationMethodRelation, VerificationMethodType,
     },
-    midnight::{MidnightNetwork, create_midnight_did_string},
 };
+use midnight_did_method::midnight_did::{MidnightNetwork, create_midnight_did_string};
 
 use crate::{
     contract::{

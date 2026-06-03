@@ -60,8 +60,8 @@ pub struct DeactivateOptions {
 
 /// DID registrar trait. Implementations create, update, and deactivate DIDs.
 pub trait DidRegistrar: Send + Sync {
-    /// Concrete DID identifier type (e.g.
-    /// [`crate::midnight::MidnightDidString`]).
+    /// Concrete DID identifier type (e.g. `MidnightDidString` from the
+    /// `midnight-did-method` crate).
     type Did: Send + Sync + 'static;
     /// Concrete patch-operation type.
     type Op: Send + Sync + 'static;

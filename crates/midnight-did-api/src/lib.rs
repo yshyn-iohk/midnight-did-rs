@@ -29,7 +29,6 @@
 //!   mutation tags, and a recording mock implementation
 //!   ([`contract::mock::RecordingContract`]).
 //! - [`error`] — top-level [`error::ApiError`].
-//! - [`network_mapping`] — runtime ↔ domain network-id mapping.
 //! - [`subject`] — DID subject + bound-fragment-id helpers.
 //! - [`ledger_mappers`] — domain → ledger conversion helpers.
 //! - [`private_state`] — controller private-state lifecycle + storage trait.
@@ -64,12 +63,17 @@ pub mod did_operations;
 pub mod document_operations;
 pub mod error;
 pub mod ledger_mappers;
-pub mod network_mapping;
 pub mod private_state;
 pub mod resolution;
 pub mod service_operations;
 pub mod subject;
 pub mod verification_method_operations;
+
+// Transitional re-exports — items that moved to `midnight-did-method` per
+// ADR 0003 stay reachable via the api crate for downstream consumers that
+// still depend on `midnight_did_api::network_mapping`, etc. Migrate to
+// `midnight_did_method::*` when convenient.
+pub use midnight_did_method::network_mapping;
 
 // Re-exports — common API surface.
 pub use contract::{
@@ -83,7 +87,9 @@ pub use ledger_mappers::{
     relation_set_from_state, schnorr_jubjub_verification_method_to_ledger, service_to_ledger,
     verification_method_to_ledger,
 };
-pub use network_mapping::{DomainToRuntime, RuntimeNetworkId, RuntimeToDomain, domain_to_runtime, runtime_to_domain};
+pub use midnight_did_method::network_mapping::{
+    DomainToRuntime, RuntimeNetworkId, RuntimeToDomain, domain_to_runtime, runtime_to_domain,
+};
 pub use private_state::{
     DidPrivateState, InMemoryPrivateStateStore, PrivateStateError, PrivateStateSlot, PrivateStateStore,
     RecoverPendingControllerPrivateStateOptions, bind_private_state_provider, clear_pending_controller_private_state,

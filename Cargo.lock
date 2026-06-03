@@ -2166,27 +2166,13 @@ dependencies = [
 ]
 
 [[package]]
-name = "midnight-did"
-version = "0.1.0"
-dependencies = [
- "compact-runtime",
- "midnight-base-crypto",
- "midnight-coin-structure",
- "midnight-onchain-runtime",
- "midnight-onchain-state",
- "midnight-onchain-vm",
- "midnight-serialize",
- "midnight-storage",
- "midnight-transient-crypto",
-]
-
-[[package]]
 name = "midnight-did-api"
 version = "0.1.0"
 dependencies = [
  "async-trait",
  "hex",
  "midnight-did-domain",
+ "midnight-did-method",
  "serde",
  "serde_json",
  "thiserror",
@@ -2202,6 +2188,7 @@ dependencies = [
  "hex",
  "midnight-did-api",
  "midnight-did-domain",
+ "midnight-did-method",
  "serde",
  "serde_json",
  "tokio",
@@ -2221,6 +2208,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "midnight-did-method"
+version = "0.1.0"
+dependencies = [
+ "blake2",
+ "hex",
+ "midnight-did-domain",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "midnight-did-runtime"
+version = "0.1.0"
+dependencies = [
+ "compact-runtime",
+ "midnight-base-crypto",
+ "midnight-coin-structure",
+ "midnight-onchain-runtime",
+ "midnight-onchain-state",
+ "midnight-onchain-vm",
+ "midnight-serialize",
+ "midnight-storage",
+ "midnight-transient-crypto",
+]
+
+[[package]]
 name = "midnight-did-uniffi"
 version = "0.1.0"
 dependencies = [
@@ -2228,6 +2242,7 @@ dependencies = [
  "hex",
  "midnight-did-api",
  "midnight-did-domain",
+ "midnight-did-method",
  "serde",
  "serde_json",
  "thiserror",

@@ -21,10 +21,8 @@
 
 use thiserror::Error;
 
-use midnight_did_domain::{
-    crypto_codecs::CodecError, did_document::ValidationError, ledger_utils::LedgerUtilsError,
-    midnight::MidnightDidError,
-};
+use midnight_did_domain::{crypto_codecs::CodecError, did_document::ValidationError, ledger_utils::LedgerUtilsError};
+use midnight_did_method::midnight_did::MidnightDidError;
 
 /// Error category returned by a [`crate::contract::DidContract`] implementation.
 ///

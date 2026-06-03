@@ -29,8 +29,8 @@ use midnight_did_domain::{
         CurveType, DidKeyId, DidString, KeyType, PublicKeyJwk, Service, ServiceEndpoint, ServiceType,
         VerificationMethod, VerificationMethodType,
     },
-    midnight::MidnightNetwork,
 };
+use midnight_did_method::midnight_did::MidnightNetwork;
 
 /// 64-hex-char (32-byte) contract address used as the DID subject suffix.
 pub const CONTRACT_ADDRESS: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";

@@ -291,8 +291,8 @@ mod tests {
     use midnight_did_domain::{
         crypto_codecs::encode_base64url,
         did_document::{CurveType, DidKeyId, DidString, KeyType, PublicKeyJwk, VerificationMethodType},
-        midnight::MidnightNetwork,
     };
+    use midnight_did_method::midnight_did::MidnightNetwork;
     use std::collections::BTreeMap;
 
     const ADDR: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";

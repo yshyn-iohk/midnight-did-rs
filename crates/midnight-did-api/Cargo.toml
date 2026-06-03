@@ -19,6 +19,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
 midnight-did-domain = { workspace = true }
+midnight-did-method = { workspace = true }
 serde               = { workspace = true }
 serde_json          = { workspace = true }
 hex                 = { workspace = true }

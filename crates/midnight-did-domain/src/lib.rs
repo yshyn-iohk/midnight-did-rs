@@ -27,9 +27,6 @@
 //! - [`did_document`] — W3C DID Core 1.0 data model + cross-consistency validation.
 //! - [`did_resolver`] — DID resolver trait + W3C resolution result types.
 //! - [`did_registrar`] — DID registrar trait + option types.
-//! - [`midnight`] — Midnight-method-specific types
-//!   (`did:midnight:<network>:<address>` and offchain variants).
-//! - [`offchain`] — MOD1-tagged binary frame encoder/decoder for offchain DIDs.
 //! - [`uri`] — RFC 3986 URI normalization.
 //! - [`ledger_utils`] — helpers that shape ledger reads/writes for the
 //!   on-chain contract.
@@ -49,8 +46,6 @@ pub mod did_document;
 pub mod did_registrar;
 pub mod did_resolver;
 pub mod ledger_utils;
-pub mod midnight;
-pub mod offchain;
 pub mod uri;
 
 // Re-exports mirroring the TS `index.ts` so downstream callers can `use
@@ -71,19 +66,5 @@ pub use did_resolver::MidnightDidResolver;
 pub use ledger_utils::{
     BoundIdField, assert_absolute_uri, normalize_bound_fragment_id, normalize_fragment_id, service_endpoint_to_ledger,
     service_type_to_ledger,
-};
-pub use midnight::{
-    ContractAddress, MidnightDidString, MidnightNetwork, MidnightSubjectId, OffchainStateHashHex,
-    create_midnight_did_string, parse_contract_address, parse_midnight_did, parse_midnight_did_string,
-};
-pub use offchain::{
-    EncodedOffchainMidnightDidState, OFFCHAIN_STATE_ENCODING, OffchainMidnightDidState, OffchainService,
-    OffchainStateHash, OffchainVerificationMethod, OffchainVerificationRelationships,
-    ParsedLongFormOffchainMidnightDid, create_long_form_offchain_midnight_did_string,
-    create_offchain_midnight_did_document_metadata, create_offchain_midnight_did_string,
-    create_offchain_midnight_did_string_from_state, decode_offchain_midnight_did_state,
-    encode_offchain_midnight_did_state, offchain_service_to_did_document_service, offchain_state_to_did_document,
-    offchain_verification_method_to_did_document_method, parse_long_form_offchain_midnight_did_string,
-    parse_offchain_state_hash,
 };
 pub use uri::{normalize_service_endpoint_value, normalize_uri_string};

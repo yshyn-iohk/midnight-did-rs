@@ -53,7 +53,7 @@ use midnight_did_api::{
         restore_private_state,
     },
 };
-use midnight_did_domain::midnight::MidnightNetwork;
+use midnight_did_method::midnight_did::MidnightNetwork;
 
 const ADDR: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 

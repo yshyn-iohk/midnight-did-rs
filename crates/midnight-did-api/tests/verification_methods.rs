@@ -50,8 +50,8 @@ use midnight_did_domain::{
         CurveType, DidKeyId, DidString, KeyType, PublicKeyJwk, VerificationMethod, VerificationMethodRelation,
         VerificationMethodType,
     },
-    midnight::MidnightNetwork,
 };
+use midnight_did_method::midnight_did::MidnightNetwork;
 
 const ADDR: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 

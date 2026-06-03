@@ -1,14 +1,15 @@
 [package]
-name         = "midnight-did"
+name         = "midnight-did-runtime"
 version.workspace      = true
 edition.workspace      = true
 rust-version.workspace = true
 license.workspace      = true
 authors.workspace      = true
 repository.workspace   = true
-description  = "Native Rust implementation of the Midnight DID Method."
+description  = "Codegen target for the Midnight DID Method — generated.rs, witnesses, controller key. Renamed from `midnight-did` (now an umbrella crate) per ADR 0003."
 
 [lib]
+name = "midnight_did_runtime"
 path = "src/lib.rs"
 
 [dependencies]

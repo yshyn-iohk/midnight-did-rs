@@ -27,7 +27,7 @@
 use midnight_did_api::network_mapping::{
     DomainToRuntime, RuntimeNetworkId, RuntimeToDomain, domain_to_runtime, runtime_to_domain,
 };
-use midnight_did_domain::midnight::MidnightNetwork;
+use midnight_did_method::midnight_did::MidnightNetwork;
 
 // ---------------------------------------------------------------------------
 // TS: "maps all NetworkId values to MidnightNetwork"

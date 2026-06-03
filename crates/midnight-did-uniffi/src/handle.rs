@@ -25,7 +25,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use midnight_did_api::contract::mock::RecordingContract;
-use midnight_did_domain::midnight::MidnightNetwork;
+use midnight_did_method::midnight_did::MidnightNetwork;
 
 /// Default contract address for the mock — same value used by the
 /// integration tests in `midnight-did-api`. Real impls will replace the

@@ -53,7 +53,7 @@ pub async fn deactivate<C: DidContract + ?Sized>(did_contract: &C) -> Result<Fin
 mod tests {
     use super::*;
     use crate::contract::mock::{RecordedCall, RecordingContract};
-    use midnight_did_domain::midnight::MidnightNetwork;
+    use midnight_did_method::midnight_did::MidnightNetwork;
 
     const ADDR: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 

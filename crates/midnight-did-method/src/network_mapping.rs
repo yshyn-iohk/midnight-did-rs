@@ -20,7 +20,7 @@
 //! (`runtime-to-domain.ts`, `domain-to-runtime.ts`) from the TypeScript
 //! source.
 
-use midnight_did_domain::midnight::MidnightNetwork;
+use crate::midnight_did::MidnightNetwork;
 
 /// Midnight runtime network identifier (matches the `NetworkId` string keys
 /// used by `@midnight-ntwrk/midnight-js-network-id`).
