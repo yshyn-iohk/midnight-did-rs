@@ -2166,6 +2166,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "midnight-did"
+version = "0.1.0"
+dependencies = [
+ "midnight-did-api",
+ "midnight-did-domain",
+ "midnight-did-method",
+ "midnight-did-runtime",
+]
+
+[[package]]
 name = "midnight-did-api"
 version = "0.1.0"
 dependencies = [

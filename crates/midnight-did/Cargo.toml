@@ -1,0 +1,34 @@
+[package]
+name = "midnight-did"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+authors.workspace      = true
+repository.workspace   = true
+homepage      = "https://github.com/yshyn-iohk/midnight-did-rs"
+documentation = "https://docs.rs/midnight-did"
+readme        = "README.md"
+description   = "Umbrella crate re-exporting the full Midnight DID Rust stack — domain types, method profile, async API, and (optional) runtime."
+keywords = ["midnight", "did", "ssi", "identity", "blockchain"]
+categories = ["cryptography"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[lib]
+path = "src/lib.rs"
+
+[features]
+default = []
+# Pull in `midnight-did-runtime` (the codegen target). Off by default
+# because the runtime crate currently fails to build against the
+# upstream halo2 snapshot — see ADR 0003 and DID-P2-2.
+runtime = ["dep:midnight-did-runtime"]
+
+[dependencies]
+midnight-did-domain  = { workspace = true }
+midnight-did-method  = { workspace = true }
+midnight-did-api     = { workspace = true }
+midnight-did-runtime = { workspace = true, optional = true }

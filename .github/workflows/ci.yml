@@ -1,16 +1,18 @@
 name: CI
 
-# CI for the midnight-did-rs workspace. Currently gates only the two crates
-# that build cleanly today:
+# CI for the midnight-did-rs workspace. Gates the four functional crates
+# and the umbrella crate:
 #
-#   - midnight-did-domain : pure data model, zero midnight-* deps (34 tests)
-#   - midnight-did-api    : depends only on domain (92 tests)
+#   - midnight-did-domain : pure data model, zero midnight-* deps
+#   - midnight-did-method : Midnight method profile (did:midnight:*)
+#   - midnight-did-api    : DidContract trait + operation builders
+#   - midnight-did        : umbrella re-export crate
 #
-# The third workspace crate `midnight-did` (the Compact codegen runtime) is
-# intentionally NOT in CI yet — it is blocked on an upstream halo2
-# ParamsKZG API skew in the Nix-pinned midnight-transient-crypto snapshot.
-# Once the flake input resolves, a follow-up will add it (likely behind a
-# `nix build` step rather than bare cargo).
+# The codegen-target crate `midnight-did-runtime` is intentionally NOT in
+# CI — it is blocked on an upstream halo2 ParamsKZG API skew in the
+# Nix-pinned midnight-transient-crypto snapshot. Once the flake input
+# resolves, a follow-up will add it (likely behind a `nix build` step
+# rather than bare cargo). Tracked under DID-P2-2.
 #
 # Three jobs:
 #   - pre-check:  cargo fmt --check + clippy -D warnings on Linux. Fast (<3 min).
@@ -26,7 +28,9 @@ on:
   pull_request:
     paths:
       - "crates/midnight-did-domain/**"
+      - "crates/midnight-did-method/**"
       - "crates/midnight-did-api/**"
+      - "crates/midnight-did/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/ci.yml"
@@ -35,7 +39,9 @@ on:
       - main
     paths:
       - "crates/midnight-did-domain/**"
+      - "crates/midnight-did-method/**"
       - "crates/midnight-did-api/**"
+      - "crates/midnight-did/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/ci.yml"
@@ -93,21 +99,29 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      # `cargo fmt -p <pkg> --check` scopes formatting to just the two
-      # crates we gate on. The third (midnight-did) is excluded so its
-      # current breakage cannot block PRs to the working crates.
-      - name: Check formatting (domain + api)
+      # `cargo fmt -p <pkg> --check` scopes formatting to the gated set.
+      # midnight-did-runtime is excluded because its halo2 dep skew blocks
+      # the build.
+      - name: Check formatting (domain + method + api + umbrella)
         run: |
           cargo fmt -p midnight-did-domain --check
-          cargo fmt -p midnight-did-api --check
+          cargo fmt -p midnight-did-method --check
+          cargo fmt -p midnight-did-api    --check
+          cargo fmt -p midnight-did        --check
 
       # Clippy with -D warnings turns lints into errors. Scoped per-crate
       # for the same reason as fmt above.
       - name: Run Clippy on midnight-did-domain
         run: cargo clippy -p midnight-did-domain --all-targets -- -D warnings
 
+      - name: Run Clippy on midnight-did-method
+        run: cargo clippy -p midnight-did-method --all-targets -- -D warnings
+
       - name: Run Clippy on midnight-did-api
         run: cargo clippy -p midnight-did-api --all-targets -- -D warnings
+
+      - name: Run Clippy on midnight-did (umbrella)
+        run: cargo clippy -p midnight-did --all-targets -- -D warnings
 
   # Test matrix on Linux + macOS. The domain crate does its own canonical
   # JSON / multibase / multihash encoding, which is exactly the kind of
@@ -152,32 +166,33 @@ jobs:
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
           path: target
-          key: ${{ runner.os }}-target-did-${{ hashFiles('Cargo.lock', 'crates/midnight-did-domain/**', 'crates/midnight-did-api/**') }}
+          key: ${{ runner.os }}-target-did-${{ hashFiles('Cargo.lock', 'crates/midnight-did-domain/**', 'crates/midnight-did-method/**', 'crates/midnight-did-api/**') }}
           restore-keys: |
             ${{ runner.os }}-target-did-
 
       # --locked guarantees Cargo.lock is honored bit-for-bit; a PR that
       # forgets to commit a lockfile update will fail here rather than
       # silently resolving to a newer transitive dep.
-      - name: Run tests (domain + api)
-        run: cargo test -p midnight-did-domain -p midnight-did-api --locked
+      - name: Run tests (domain + method + api)
+        run: cargo test -p midnight-did-domain -p midnight-did-method -p midnight-did-api --locked
 
-  # Build the two wasm-clean crates against wasm32-unknown-unknown.
-  # The architecture doc + ADR 0001 claim that midnight-did-domain and
-  # midnight-did-api are runtime-agnostic and pull no midnight-* deps,
-  # which means they should compile to wasm without ceremony. This job
-  # enforces that claim: the moment a transitive dep regresses wasm
-  # support (e.g. someone pulls in a crate that uses std::process or
-  # filesystem APIs), the build fails here on PR.
+  # Build the wasm-clean crates against wasm32-unknown-unknown.
+  # The architecture doc + ADR 0001 claim that midnight-did-domain,
+  # midnight-did-method, midnight-did-api, and the umbrella midnight-did
+  # are runtime-agnostic and pull no halo2 deps, which means they should
+  # compile to wasm without ceremony. This job enforces that claim: the
+  # moment a transitive dep regresses wasm support (e.g. someone pulls in
+  # a crate that uses std::process or filesystem APIs), the build fails
+  # here on PR.
   #
   # Pure wasm32-unknown-unknown target only — no wasm-bindgen, wasm-pack,
   # or web-sys at this stage. JS interop is a separate concern (would
-  # belong in a thin browser-side wrapper crate, not the domain/api
+  # belong in a thin browser-side wrapper crate, not the domain/method/api
   # core).
   #
-  # midnight-did is intentionally excluded — it transitively depends on
-  # halo2 / arkworks crates that do not compile to wasm. Adding it here
-  # would just rediscover that.
+  # midnight-did-runtime is intentionally excluded — it transitively
+  # depends on halo2 / arkworks crates that do not compile to wasm.
+  # Adding it here would just rediscover that.
   wasm-build:
     name: WASM target build
     needs: pre-check
@@ -207,9 +222,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-wasm-
 
-      - name: Build wasm32-unknown-unknown (domain + api)
+      - name: Build wasm32-unknown-unknown (domain + method + api + umbrella)
         run: |
           cargo build --target wasm32-unknown-unknown \
             -p midnight-did-domain \
+            -p midnight-did-method \
             -p midnight-did-api \
+            -p midnight-did \
             --locked

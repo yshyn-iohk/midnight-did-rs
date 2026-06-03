@@ -6,8 +6,9 @@ SPDX-License-Identifier: Apache-2.0
 
 # ADR 0003 — Crate split path: 2 → 4 + umbrella
 
-**Status:** Accepted (target shape); 2-crate shape in effect today.
-**Date:** 2026-06-03
+**Status:** Implemented — 5-crate shape (4 stack + umbrella) landed on
+2026-06-04.
+**Date:** 2026-06-03 (Accepted); 2026-06-04 (Implemented).
 
 ## Context
 
@@ -166,3 +167,32 @@ trigger.
   structure" — original 4-crate proposal.
 - Related: [ADR 0001 — Async-only API](./0001-async-only-api.md),
   [ADR 0002 — Trait erasure for contract calls](./0002-trait-erasure-for-contract.md).
+
+## Implementation note (2026-06-04)
+
+The split landed in two commits on `cycle-1-bootstrap`. Final layout:
+
+- `crates/midnight-did-domain/` — pure W3C DID Core (no Midnight-method types).
+- `crates/midnight-did-method/` — `did:midnight:*` parsing
+  (`midnight_did.rs`), runtime ↔ domain network map (`network_mapping.rs`),
+  and MOD1 offchain frame codec (`offchain.rs`).
+- `crates/midnight-did-api/` — `DidContract` async trait, operation
+  builders, resolution, mocks, private state, error. The Ledger wire
+  types (`LedgerVerificationMethod`, `JubjubPointHex`, etc.) and the
+  trait-coupled helpers (`subject.rs`, `ledger_mappers.rs`) stayed in
+  api because they depend on the trait itself. A future ADR may pull
+  those down to method once the trait is split into a method-profile
+  half and an operation-layer half; the current split is conservative
+  and preserves 100 % test-count parity (144 → 144).
+- `crates/midnight-did-runtime/` — renamed from `crates/midnight-did/`.
+  Still blocked on upstream halo2 `ParamsKZG` API skew; tracked under
+  DID-P2-2.
+- `crates/midnight-did/` — new umbrella crate. Re-exports the four
+  sibling crates and a small set of convenience flat exports. The
+  optional `runtime` feature pulls `midnight-did-runtime` in.
+
+Deviation from the target shape: `offchain.rs` moved to method instead
+of staying in domain because it embeds `did:midnight:` strings — it is
+method-specific. The spec target assumed a clean domain/method split
+but `offchain` straddles both; honouring the dependency direction
+(method depends on domain, never the reverse) decided the move.

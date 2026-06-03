@@ -57,22 +57,32 @@ needs and no more.
 
 ## 2. Current crate layout
 
-Two functional crates today plus one that is upstream-blocked. Concrete
-LOC counts as of 2026-06-03:
+Four functional crates plus an umbrella plus one upstream-blocked
+runtime crate. The 4-crate split landed on 2026-06-04 per
+[ADR 0003](./adr/0003-crate-split-2-to-4-with-umbrella.md).
 
-| Crate | LOC | Tests | Status |
-| --- | ---: | ---: | --- |
-| `midnight-did-domain` | 3,100 | 34 | green |
-| `midnight-did-api`    | 3,112 (+ tests) | 92 | green |
-| `midnight-did`        | 1,320 (gen) + 19 | — | **blocked** |
+| Crate | Role | Status |
+| --- | --- | --- |
+| `midnight-did-domain`  | Pure W3C DID Core types + crypto codecs | green |
+| `midnight-did-method`  | Midnight method profile (`did:midnight:*`, MOD1 offchain, network map) | green |
+| `midnight-did-api`     | `DidContract` async trait + operations + resolution + Ledger wire types | green |
+| `midnight-did-runtime` | Codegen target (renamed from `midnight-did`) | **blocked** (upstream halo2) |
+| `midnight-did`         | Umbrella re-export crate (for monolithic consumers) | green |
 
 ```
                  ┌───────────────────────────────┐
                  │     midnight-did-domain       │
                  │ Pure-data W3C DID Core types  │
-                 │ + MOD1 offchain encoder       │
-                 │ + Midnight method types       │
+                 │ + crypto codecs + URI helpers │
                  │ Zero midnight-* deps          │
+                 └──────────────┬────────────────┘
+                                │
+                                ▼
+                 ┌───────────────────────────────┐
+                 │     midnight-did-method       │
+                 │ did:midnight:* parsing        │
+                 │ + MOD1 offchain frame codec   │
+                 │ + runtime ↔ domain net map    │
                  └──────────────┬────────────────┘
                                 │
                                 ▼
@@ -80,14 +90,14 @@ LOC counts as of 2026-06-03:
                  │      midnight-did-api         │
                  │ DidContract async trait       │
                  │ + operation builders          │
-                 │ + ledger ↔ domain mappers     │
+                 │ + Ledger wire types           │
+                 │ + ledger_mappers + subject    │
                  │ + RecordingContract mock      │
-                 │ + Midnight method profile     │
                  └──────────────┬────────────────┘
                                 │
                                 ▼  (will depend, once it builds)
                  ┌───────────────────────────────┐
-                 │       midnight-did            │
+                 │     midnight-did-runtime      │
                  │  ✗ BLOCKED                    │
                  │ Generated contract from       │
                  │   compactc --rust did.compact │
@@ -95,6 +105,13 @@ LOC counts as of 2026-06-03:
                  │ Pending: halo2 ParamsKZG API  │
                  │ alignment in the third_party  │
                  │ midnight-ledger pin           │
+                 └───────────────────────────────┘
+
+                 ┌───────────────────────────────┐
+                 │        midnight-did           │
+                 │ Umbrella — re-exports the 4   │
+                 │ siblings under stable names.  │
+                 │ Optional `runtime` feature.   │
                  └───────────────────────────────┘
 ```
 
@@ -125,13 +142,13 @@ linked against this snapshot. Refreshing that pin is the unblock.
 
 ---
 
-## 3. Target crate layout
+## 3. Crate layout (implemented 2026-06-04)
 
-The TS port plan (see `Research — TS port plan.md` in Obsidian)
-recommended a 4-crate split. We pulled the trigger on 2 crates first
-to ship the bedrock layers fast. The remaining split — extracting
-`midnight-did-method` from `midnight-did-api` and adding an umbrella —
-is captured in [ADR 0003](./adr/0003-crate-split-2-to-4-with-umbrella.md).
+The 4-crate split landed on 2026-06-04. The TS port plan recommended a
+4-crate split; we shipped 2 first (domain + api) to land the bedrock,
+then split out `midnight-did-method` and added the umbrella. The full
+implementation history is captured in
+[ADR 0003](./adr/0003-crate-split-2-to-4-with-umbrella.md).
 
 ```
             ┌─────────────────────────────────────┐
@@ -195,28 +212,20 @@ which point consumer ergonomics dictates the umbrella shape.
 
 ## 4. Use-case → dep-cone mapping
 
-Today (2-crate world):
+Current state (4 functional crates + umbrella + blocked runtime):
 
 | Use case | Crates pulled in | Notes |
 | --- | --- | --- |
-| Mobile wallet (Dioxus) | `midnight-did-domain` + `midnight-did-api` + `midnight-did` | `midnight-did` is the on-chain bind; pending unblock. |
-| DID resolver | `midnight-did-domain` + `midnight-did-api` | Resolver uses `LedgerToDomain` (in api today) + ledger-reader; no wallet path. |
-| Web / wasm | `midnight-did-domain` + `midnight-did-api` | Both crates build cleanly against `wasm32-unknown-unknown` and are gated by a CI job that runs on every PR. The resolver path is wasm-ready; the wallet path still needs `midnight-did` which is not wasm-targetable (halo2 deps). |
-| UniFFI binding | `midnight-did-domain` + `midnight-did-api` + `midnight-did` + new `midnight-did-uniffi` | UniFFI wrapper is its own crate; reuses the rest. |
+| Mobile wallet (Dioxus) | `midnight-did` (umbrella) → pulls all four; `runtime` feature when halo2 unblocks | Single dependency, stable namespace. |
+| DID resolver | `midnight-did-domain` + `midnight-did-method` | Skips api + runtime entirely. |
+| Web / wasm | `midnight-did-domain` + `midnight-did-method` (resolver path) or + `midnight-did-api` (write side w/o runtime) | All three build clean against `wasm32-unknown-unknown` in CI. |
+| Write-side CLI / library | `midnight-did-api` (transitively pulls domain + method) | What the reference CLI does today. |
+| UniFFI binding | `midnight-did-uniffi` → depends on `midnight-did-api` + `uniffi` runtime | UniFFI wrapper deliberately targets the api layer, not the umbrella, to avoid surfacing the `runtime` feature flag through FFI. |
 
-After the 4-crate split:
-
-| Use case | Crates pulled in |
-| --- | --- |
-| Mobile wallet (Dioxus) | `midnight-did` (umbrella) → pulls all four |
-| DID resolver | `midnight-did-domain` + `midnight-did-method` |
-| Web / wasm | `midnight-did-domain` + `midnight-did-method` (resolver path), plus a thin wasm-bindgen wrapper crate |
-| UniFFI binding | `midnight-did-uniffi` → depends on `midnight-did` (umbrella) + the `uniffi` runtime |
-
-The 4-crate split is **orthogonal** across the four downstream use
-cases: each cone picks exactly the crates it needs and nothing else.
-The UniFFI binding needs the 5th wrapper crate so the umbrella stays
-free of the `uniffi` proc-macro deps.
+The 4-crate split is **orthogonal** across these use cases: each cone
+picks exactly the crates it needs and nothing else. The UniFFI binding
+keeps `midnight-did-uniffi` as its own crate so the umbrella stays free
+of the `uniffi` proc-macro deps.
 
 ---
 
