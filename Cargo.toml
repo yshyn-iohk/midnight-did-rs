@@ -35,6 +35,8 @@ hex        = "0.4"
 # midnight-did-domain to 0.1.1. Same pattern as compact-runtime + compact-runtime-macros
 # in the codegen-rust toolchain.
 midnight-did-domain = { path = "crates/midnight-did-domain", version = "=0.1.0" }
+# api crate — consumed by the reference CLI + (future) downstream tooling
+midnight-did-api    = { path = "crates/midnight-did-api",    version = "=0.1.0" }
 
 [profile.dev]
 debug = "limited"

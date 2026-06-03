@@ -1,0 +1,24 @@
+[package]
+name                   = "midnight-did-cli"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+authors.workspace      = true
+repository.workspace   = true
+description            = "Reference CLI demonstrating the Midnight DID Rust API: create / update / rotate / resolve / deactivate."
+publish                = false
+
+[[bin]]
+name = "midnight-did-cli"
+path = "src/main.rs"
+
+[dependencies]
+midnight-did-domain = { workspace = true }
+midnight-did-api    = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+tokio      = { version = "1", features = ["full"] }
+clap       = { version = "4", features = ["derive"] }
+hex        = { workspace = true }
+anyhow     = "1"

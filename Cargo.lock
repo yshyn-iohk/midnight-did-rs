@@ -2078,6 +2078,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "midnight-did-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "hex",
+ "midnight-did-api",
+ "midnight-did-domain",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "midnight-did-domain"
 version = "0.1.0"
 dependencies = [
