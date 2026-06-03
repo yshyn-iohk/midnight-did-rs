@@ -1,7 +1,7 @@
 { ... }:
 {
   perSystem =
-    { pkgs, midnightDidRsLib, midnightLedgerSrc, compactRuntimeRsSrc, compactPkg, ... }:
+    { pkgs, midnightDidRsLib, midnightLedgerSrc, midnightZkSrc, compactRuntimeRsSrc, compactPkg, ... }:
     let
       inherit (midnightDidRsLib.rustTools) rust;
     in
@@ -24,6 +24,19 @@
           TARGET="${midnightLedgerSrc}"
           LINK="$ROOT_DIR/third_party/midnight-ledger"
           mkdir -p "$ROOT_DIR/third_party"
+          if [ -L "$LINK" ] && [ "$(readlink "$LINK")" = "$TARGET" ]; then
+            :
+          else
+            rm -rf "$LINK"
+            ln -s "$TARGET" "$LINK"
+            echo "Linked $LINK -> $TARGET"
+          fi
+
+          # Materialize third_party/midnight-zk as a symlink to the nix-store path.
+          # Provides the patched `midnight-proofs` crate referenced by
+          # [patch.crates-io] in the root Cargo.toml. See ADR 0006.
+          TARGET="${midnightZkSrc}"
+          LINK="$ROOT_DIR/third_party/midnight-zk"
           if [ -L "$LINK" ] && [ "$(readlink "$LINK")" = "$TARGET" ]; then
             :
           else

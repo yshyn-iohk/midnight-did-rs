@@ -2346,14 +2346,14 @@ dependencies = [
 
 [[package]]
 name = "midnight-proofs"
-version = "0.7.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b48f199fa4707df5dc443238cd260344f2ad369897fbdc559dacce19b43d2119"
+version = "0.7.99"
+source = "git+https://github.com/yshyn-iohk/midnight-zk.git?rev=cf60e3ccb87f2de40b1307f7e78abdcb4c696c91#cf60e3ccb87f2de40b1307f7e78abdcb4c696c91"
 dependencies = [
  "blake2b_simd",
  "ff",
  "getrandom 0.2.17",
  "group",
+ "memmap2",
  "midnight-curves",
  "num-bigint",
  "rand_chacha 0.3.1",
@@ -2361,6 +2361,7 @@ dependencies = [
  "rayon",
  "serde",
  "serde_derive",
+ "tempfile",
  "tracing",
 ]
 

@@ -7,6 +7,7 @@
       # materialised by the devShells shellHook using these source paths.
       _module.args = {
         midnightLedgerSrc    = midnightDidRsLib.sources.midnight-ledger;
+        midnightZkSrc        = midnightDidRsLib.sources.midnight-zk;
         compactRuntimeRsSrc  = "${inputs.compact}/runtime-rs";
       };
     };

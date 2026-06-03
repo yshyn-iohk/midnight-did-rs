@@ -14,6 +14,15 @@
       url = "github:yshyn-iohk/midnight-ledger/dioxus-vc-demo";
       flake = false;
     };
+    # midnight-zk fork providing the patched `midnight-proofs` crate that
+    # `midnight-ledger`'s `transient-crypto` references via [patch.crates-io].
+    # Without this, `cargo build -p midnight-did-runtime` fails on the
+    # ParamsKZG::{read_mmap_arc, write_mmap_companion, read_custom_lazy}
+    # methods that only exist on the patched fork. See ADR 0006.
+    midnight-zk = {
+      url = "github:yshyn-iohk/midnight-zk/feat/v0.7-h-poly-streaming";
+      flake = false;
+    };
     compact = {
       url = "github:yshyn-iohk/compact/codegen-rust";
     };
@@ -49,6 +58,7 @@
               };
               sources = {
                 midnight-ledger = inputs.midnight-ledger;
+                midnight-zk     = inputs.midnight-zk;
               };
             };
           };

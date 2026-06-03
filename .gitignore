@@ -10,6 +10,7 @@
 
 # Symlinks materialised by the devshell (not vendored)
 /third_party/midnight-ledger
+/third_party/midnight-zk
 /third_party/compact-runtime-rs
 
 # Editor / OS

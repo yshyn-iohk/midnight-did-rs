@@ -286,6 +286,23 @@
         "type": "github"
       }
     },
+    "midnight-zk": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1779560338,
+        "narHash": "sha256-rvEmntRM/lqtuT01QBqbEHR9OwobHLO48u6W9xebtxU=",
+        "owner": "yshyn-iohk",
+        "repo": "midnight-zk",
+        "rev": "cf60e3ccb87f2de40b1307f7e78abdcb4c696c91",
+        "type": "github"
+      },
+      "original": {
+        "owner": "yshyn-iohk",
+        "ref": "feat/v0.7-h-poly-streaming",
+        "repo": "midnight-zk",
+        "type": "github"
+      }
+    },
     "n2c": {
       "inputs": {
         "nixpkgs": "nixpkgs_2"
@@ -604,6 +621,7 @@
         "compact": "compact",
         "flake-parts": "flake-parts",
         "midnight-ledger": "midnight-ledger",
+        "midnight-zk": "midnight-zk",
         "nixpkgs": "nixpkgs_14",
         "rust-overlay": "rust-overlay"
       }
