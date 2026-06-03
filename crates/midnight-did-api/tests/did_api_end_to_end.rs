@@ -43,21 +43,27 @@ use std::path::PathBuf;
 
 use midnight_did_api::{
     contract::{
-        DidLedgerSnapshot, LedgerPublicKeyJwk, LedgerVerificationMethod, mock::{RecordedCall, RecordingContract},
+        DidLedgerSnapshot, JubjubPointHex, LedgerPublicKeyJwk, LedgerSchnorrJubjubVerificationMethod, LedgerService,
+        LedgerVerificationMethod,
+        mock::{RecordedCall, RecordingContract},
     },
     controller_operations::rotate_controller_key,
     did_operations::create_did,
     document_operations::{add_also_known_as, deactivate, remove_also_known_as},
+    ledger_mappers::SchnorrJubjubVerificationMethod,
     private_state::{InMemoryPrivateStateStore, PrivateStateSlot, restore_private_state},
     resolution::{ledger_state_to_did_document, ledger_state_to_metadata, resolve},
     service_operations::{add_service, remove_service},
-    verification_method_operations::add_verification_method,
+    verification_method_operations::{
+        add_schnorr_jubjub_verification_method, add_verification_method, add_verification_method_relation,
+        remove_schnorr_jubjub_verification_method, remove_verification_method, update_verification_method,
+    },
 };
 use midnight_did_domain::{
     crypto_codecs::encode_base64url,
     did_document::{
         CurveType, DidKeyId, DidString, KeyType, PublicKeyJwk, Service, ServiceEndpoint, ServiceType,
-        VerificationMethod, VerificationMethodType,
+        VerificationMethod, VerificationMethodRelation, VerificationMethodType,
     },
     midnight::MidnightNetwork,
 };
@@ -69,9 +75,7 @@ fn did_subject() -> String {
 }
 
 fn fixtures_dir() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests")
-        .join("fixtures")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests").join("fixtures")
 }
 
 fn load_fixture(name: &str) -> serde_json::Value {
@@ -154,7 +158,8 @@ async fn initial_state_matches_ts_fixture() {
     });
     let expected = load_fixture("initial-state.json");
     assert_eq!(
-        actual, expected,
+        actual,
+        expected,
         "initial DID Document diverges from TS fixture: actual = {}",
         serde_json::to_string_pretty(&actual).unwrap()
     );
@@ -259,7 +264,9 @@ async fn rotate_controller_key_then_add_and_remove_aka() {
         .unwrap();
 
     // Subsequent aka updates succeed.
-    add_also_known_as(&contract, "did:example:rotated-controller").await.unwrap();
+    add_also_known_as(&contract, "did:example:rotated-controller")
+        .await
+        .unwrap();
     remove_also_known_as(&contract, "did:example:rotated-controller")
         .await
         .unwrap();
@@ -357,12 +364,8 @@ async fn add_then_remove_service_records_expected_calls() {
         id: "service-1".into(),
         type_: ServiceType::One("DIDCommV2".into()),
         service_endpoint: ServiceEndpoint::Array(vec![
-            midnight_did_domain::did_document::ServiceEndpointArrayEntry::Uri(
-                "https://localhost/didcomm/v2".into(),
-            ),
-            midnight_did_domain::did_document::ServiceEndpointArrayEntry::Uri(
-                "wss://localhost/didcomm/v2".into(),
-            ),
+            midnight_did_domain::did_document::ServiceEndpointArrayEntry::Uri("https://localhost/didcomm/v2".into()),
+            midnight_did_domain::did_document::ServiceEndpointArrayEntry::Uri("wss://localhost/didcomm/v2".into()),
         ]),
     };
     add_service(&contract, &svc).await.unwrap();
@@ -370,11 +373,15 @@ async fn add_then_remove_service_records_expected_calls() {
 
     let calls = contract.calls();
     assert!(
-        calls.iter().any(|c| matches!(c, RecordedCall::SetService(s, _) if s.id == "#service-1")),
+        calls
+            .iter()
+            .any(|c| matches!(c, RecordedCall::SetService(s, _) if s.id == "#service-1")),
         "{calls:?}"
     );
     assert!(
-        calls.iter().any(|c| matches!(c, RecordedCall::RemoveService(id) if id == "#service-1")),
+        calls
+            .iter()
+            .any(|c| matches!(c, RecordedCall::RemoveService(id) if id == "#service-1")),
         "{calls:?}"
     );
 }
@@ -386,7 +393,9 @@ async fn add_also_known_as_records_set_call_and_rejects_invalid_uris() {
     add_also_known_as(&contract, "did:example:aka-1").await.unwrap();
     let calls = contract.calls();
     assert!(
-        calls.iter().any(|c| matches!(c, RecordedCall::SetAlsoKnownAs(uri, _) if uri == "did:example:aka-1")),
+        calls
+            .iter()
+            .any(|c| matches!(c, RecordedCall::SetAlsoKnownAs(uri, _) if uri == "did:example:aka-1")),
         "{calls:?}"
     );
 
@@ -449,5 +458,409 @@ fn ledger_state_to_did_document_with_vm_matches_fixture() {
         "didDocumentMetadata": dump(&meta),
     });
     let expected = load_fixture("after-set-verification-method.json");
+    assert_eq!(actual, expected);
+}
+
+// ===========================================================================
+// Extended TS fixture parity: one fixture per remaining contract mutation.
+// Each fixture mirrors what `LedgerToDomain.ledgerStateToDIDDocument` +
+// `ledgerStateToMetadata` would produce for a deterministic post-mutation
+// ledger snapshot. The Rust tests drive the api layer through the recording
+// mock contract, install the corresponding ledger snapshot, then assert the
+// resolver output is structurally identical to the fixture.
+//
+// Authoritative TS reference:
+//   packages/did/src/ledger-to-domain.ts  (LedgerToDomain.*)
+//   packages/api/src/ledger-mappers.ts    (verification method / service / aka)
+// ===========================================================================
+
+/// Reusable Ed25519 verification method on `#key-1` with all-zero coords.
+fn vm_key_1_ed25519_ledger() -> LedgerVerificationMethod {
+    LedgerVerificationMethod {
+        id: "#key-1".into(),
+        typ: VerificationMethodType::JsonWebKey,
+        public_key_jwk: LedgerPublicKeyJwk {
+            kty: KeyType::OKP,
+            crv: CurveType::Ed25519,
+            x: encode_base64url(&[0u8; 32]),
+            y: String::new(),
+        },
+    }
+}
+
+fn vm_key_1_ed25519_domain() -> VerificationMethod {
+    VerificationMethod {
+        id: DidKeyId(format!("{}#key-1", did_subject())),
+        type_: VerificationMethodType::JsonWebKey,
+        controller: DidString(did_subject()),
+        public_key_jwk: PublicKeyJwk {
+            kty: KeyType::OKP,
+            crv: CurveType::Ed25519,
+            x: encode_base64url(&[0u8; 32]),
+            y: None,
+            extensions: BTreeMap::new(),
+        },
+    }
+}
+
+// ---------------------------------------------------------------------------
+// alsoKnownAs (insert / remove)
+// ---------------------------------------------------------------------------
+
+/// `setAlsoKnownAs(uri, Insert)` — mirrors the TS "should add alsoKnownAs"
+/// case after the ledger reflects one inserted alias.
+#[tokio::test]
+async fn after_set_aka_insert_matches_ts_fixture() {
+    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, initial_ledger());
+    add_also_known_as(&contract, "did:example:aka-1").await.unwrap();
+
+    let mut post = initial_ledger();
+    post.also_known_as = vec!["did:example:aka-1".into()];
+    post.version = 2;
+    post.operation_count = 1;
+    post.updated_ms = 1_700_002_800_000; // 2023-11-14T23:00:00Z
+    contract.set_ledger(post);
+
+    let resolved = resolve(&contract).await.unwrap().expect("resolves");
+    let actual = serde_json::json!({
+        "didDocument": dump(&resolved.did_document),
+        "didDocumentMetadata": dump(&resolved.did_document_metadata),
+    });
+    let expected = load_fixture("after-set-aka-insert.json");
+    assert_eq!(actual, expected);
+}
+
+/// `setAlsoKnownAs(uri, Remove)` — after the alias is gone, the
+/// `alsoKnownAs` field collapses away (mirrors `LedgerToDomain` skipping
+/// empty sets) and `versionId` advances to 3.
+#[tokio::test]
+async fn after_set_aka_remove_matches_ts_fixture() {
+    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, {
+        let mut s = initial_ledger();
+        s.also_known_as = vec!["did:example:aka-1".into()];
+        s.version = 2;
+        s
+    });
+    remove_also_known_as(&contract, "did:example:aka-1").await.unwrap();
+
+    let mut post = initial_ledger();
+    post.version = 3;
+    post.operation_count = 2;
+    post.updated_ms = 1_700_003_700_000; // 2023-11-14T23:15:00Z
+    contract.set_ledger(post);
+
+    let resolved = resolve(&contract).await.unwrap().expect("resolves");
+    let actual = serde_json::json!({
+        "didDocument": dump(&resolved.did_document),
+        "didDocumentMetadata": dump(&resolved.did_document_metadata),
+    });
+    let expected = load_fixture("after-set-aka-remove.json");
+    assert_eq!(actual, expected);
+}
+
+// ---------------------------------------------------------------------------
+// verificationMethod update / remove
+// ---------------------------------------------------------------------------
+
+/// `setVerificationMethod(vm, Update)` — replace the JWK `x` for the
+/// already-existing `#key-1`. The fixture has the new base64url `x`.
+#[tokio::test]
+async fn after_set_vm_update_matches_ts_fixture() {
+    let mut pre = initial_ledger();
+    pre.verification_methods
+        .insert("#key-1".into(), vm_key_1_ed25519_ledger());
+    pre.version = 3;
+    pre.operation_count = 2;
+    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, pre);
+
+    // Update: same id, new coord bytes (0x77…).
+    let new_x = encode_base64url(&[0x77u8; 32]);
+    let updated_vm = VerificationMethod {
+        public_key_jwk: PublicKeyJwk {
+            x: new_x.clone(),
+            ..vm_key_1_ed25519_domain().public_key_jwk
+        },
+        ..vm_key_1_ed25519_domain()
+    };
+    update_verification_method(&contract, &updated_vm).await.unwrap();
+
+    let mut post = initial_ledger();
+    post.verification_methods.insert(
+        "#key-1".into(),
+        LedgerVerificationMethod {
+            id: "#key-1".into(),
+            typ: VerificationMethodType::JsonWebKey,
+            public_key_jwk: LedgerPublicKeyJwk {
+                kty: KeyType::OKP,
+                crv: CurveType::Ed25519,
+                x: new_x,
+                y: String::new(),
+            },
+        },
+    );
+    post.version = 4;
+    post.operation_count = 3;
+    post.updated_ms = 1_700_002_800_000;
+    contract.set_ledger(post);
+
+    let resolved = resolve(&contract).await.unwrap().expect("resolves");
+    let actual = serde_json::json!({
+        "didDocument": dump(&resolved.did_document),
+        "didDocumentMetadata": dump(&resolved.did_document_metadata),
+    });
+    let expected = load_fixture("after-set-vm-update.json");
+    assert_eq!(actual, expected);
+}
+
+/// `removeVerificationMethod(id)` — also purges any relations referencing
+/// the method. After removal the document has no `verificationMethod`
+/// array and no relation arrays.
+#[tokio::test]
+async fn after_remove_vm_matches_ts_fixture() {
+    let mut pre = initial_ledger();
+    pre.verification_methods
+        .insert("#key-1".into(), vm_key_1_ed25519_ledger());
+    pre.authentication_relation = vec!["#key-1".into()];
+    pre.version = 4;
+    pre.operation_count = 3;
+    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, pre);
+
+    remove_verification_method(&contract, "#key-1").await.unwrap();
+
+    let mut post = initial_ledger();
+    post.version = 5;
+    post.operation_count = 5; // relation purge + remove vm
+    post.updated_ms = 1_700_003_700_000;
+    contract.set_ledger(post);
+
+    let resolved = resolve(&contract).await.unwrap().expect("resolves");
+    let actual = serde_json::json!({
+        "didDocument": dump(&resolved.did_document),
+        "didDocumentMetadata": dump(&resolved.did_document_metadata),
+    });
+    let expected = load_fixture("after-remove-vm.json");
+    assert_eq!(actual, expected);
+}
+
+// ---------------------------------------------------------------------------
+// Schnorr-Jubjub verification methods
+// ---------------------------------------------------------------------------
+
+/// `setSchnorrJubjubVerificationMethod(vm, Insert)` — fixture shows the EC
+/// + Jubjub JWK reconstruction performed by
+/// `LedgerToDomain.schnorrJubjubPkToJwk`. The hex coords `01` / `02` are
+/// right-padded to 32 bytes then base64url-encoded.
+#[tokio::test]
+async fn after_set_schnorr_jubjub_vm_insert_matches_ts_fixture() {
+    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, initial_ledger());
+
+    let vm = SchnorrJubjubVerificationMethod {
+        id: "#jub-1".into(),
+        public_key: JubjubPointHex {
+            x: "01".into(),
+            y: "02".into(),
+        },
+    };
+    add_schnorr_jubjub_verification_method(&contract, &vm).await.unwrap();
+
+    let mut post = initial_ledger();
+    post.schnorr_jubjub_verification_methods.insert(
+        "#jub-1".into(),
+        LedgerSchnorrJubjubVerificationMethod {
+            id: "#jub-1".into(),
+            public_key: JubjubPointHex {
+                x: "01".into(),
+                y: "02".into(),
+            },
+        },
+    );
+    post.version = 2;
+    post.operation_count = 1;
+    post.updated_ms = 1_700_002_800_000;
+    contract.set_ledger(post);
+
+    let resolved = resolve(&contract).await.unwrap().expect("resolves");
+    let actual = serde_json::json!({
+        "didDocument": dump(&resolved.did_document),
+        "didDocumentMetadata": dump(&resolved.did_document_metadata),
+    });
+    let expected = load_fixture("after-set-schnorr-jubjub-vm-insert.json");
+    assert_eq!(actual, expected);
+}
+
+/// `removeSchnorrJubjubVerificationMethod(id)`.
+#[tokio::test]
+async fn after_remove_schnorr_jubjub_vm_matches_ts_fixture() {
+    let mut pre = initial_ledger();
+    pre.schnorr_jubjub_verification_methods.insert(
+        "#jub-1".into(),
+        LedgerSchnorrJubjubVerificationMethod {
+            id: "#jub-1".into(),
+            public_key: JubjubPointHex {
+                x: "01".into(),
+                y: "02".into(),
+            },
+        },
+    );
+    pre.version = 2;
+    pre.operation_count = 1;
+    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, pre);
+
+    remove_schnorr_jubjub_verification_method(&contract, "#jub-1")
+        .await
+        .unwrap();
+
+    let mut post = initial_ledger();
+    post.version = 3;
+    post.operation_count = 2;
+    post.updated_ms = 1_700_003_700_000;
+    contract.set_ledger(post);
+
+    let resolved = resolve(&contract).await.unwrap().expect("resolves");
+    let actual = serde_json::json!({
+        "didDocument": dump(&resolved.did_document),
+        "didDocumentMetadata": dump(&resolved.did_document_metadata),
+    });
+    let expected = load_fixture("after-remove-schnorr-jubjub-vm.json");
+    assert_eq!(actual, expected);
+}
+
+// ---------------------------------------------------------------------------
+// verificationMethodRelation insert (authentication)
+// ---------------------------------------------------------------------------
+
+/// `setVerificationMethodRelation(Authentication, "#key-1", Insert)` —
+/// fixture shows the relation array with the fragment-form key id.
+#[tokio::test]
+async fn after_set_vm_relation_insert_matches_ts_fixture() {
+    let mut pre = initial_ledger();
+    pre.verification_methods
+        .insert("#key-1".into(), vm_key_1_ed25519_ledger());
+    pre.version = 2;
+    pre.operation_count = 1;
+    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, pre);
+
+    add_verification_method_relation(&contract, VerificationMethodRelation::Authentication, "#key-1")
+        .await
+        .unwrap();
+
+    let mut post = initial_ledger();
+    post.verification_methods
+        .insert("#key-1".into(), vm_key_1_ed25519_ledger());
+    post.authentication_relation = vec!["#key-1".into()];
+    post.version = 3;
+    post.operation_count = 2;
+    post.updated_ms = 1_700_002_800_000;
+    contract.set_ledger(post);
+
+    let resolved = resolve(&contract).await.unwrap().expect("resolves");
+    let actual = serde_json::json!({
+        "didDocument": dump(&resolved.did_document),
+        "didDocumentMetadata": dump(&resolved.did_document_metadata),
+    });
+    let expected = load_fixture("after-set-vm-relation-insert.json");
+    assert_eq!(actual, expected);
+}
+
+// ---------------------------------------------------------------------------
+// service insert / remove
+// ---------------------------------------------------------------------------
+
+/// `setService(svc, Insert)` — single URI endpoint, single-string type.
+/// `parseServiceEndpoint` round-trips the JSON-encoded URI back to a bare
+/// string, so the fixture's `serviceEndpoint` is just the URL.
+#[tokio::test]
+async fn after_set_service_insert_matches_ts_fixture() {
+    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, initial_ledger());
+
+    let svc = Service {
+        id: "svc-1".into(),
+        type_: ServiceType::One("DIDCommMessaging".into()),
+        service_endpoint: ServiceEndpoint::Uri("https://example.com/didcomm".into()),
+    };
+    add_service(&contract, &svc).await.unwrap();
+
+    let mut post = initial_ledger();
+    post.services.insert(
+        "#svc-1".into(),
+        LedgerService {
+            id: "#svc-1".into(),
+            typ: "DIDCommMessaging".into(),
+            service_endpoint: "\"https://example.com/didcomm\"".into(),
+        },
+    );
+    post.version = 2;
+    post.operation_count = 1;
+    post.updated_ms = 1_700_002_800_000;
+    contract.set_ledger(post);
+
+    let resolved = resolve(&contract).await.unwrap().expect("resolves");
+    let actual = serde_json::json!({
+        "didDocument": dump(&resolved.did_document),
+        "didDocumentMetadata": dump(&resolved.did_document_metadata),
+    });
+    let expected = load_fixture("after-set-service-insert.json");
+    assert_eq!(actual, expected);
+}
+
+/// `removeService(id)` — after removal the document has no `service` array.
+#[tokio::test]
+async fn after_remove_service_matches_ts_fixture() {
+    let mut pre = initial_ledger();
+    pre.services.insert(
+        "#svc-1".into(),
+        LedgerService {
+            id: "#svc-1".into(),
+            typ: "DIDCommMessaging".into(),
+            service_endpoint: "\"https://example.com/didcomm\"".into(),
+        },
+    );
+    pre.version = 2;
+    pre.operation_count = 1;
+    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, pre);
+
+    remove_service(&contract, "svc-1").await.unwrap();
+
+    let mut post = initial_ledger();
+    post.version = 3;
+    post.operation_count = 2;
+    post.updated_ms = 1_700_003_700_000;
+    contract.set_ledger(post);
+
+    let resolved = resolve(&contract).await.unwrap().expect("resolves");
+    let actual = serde_json::json!({
+        "didDocument": dump(&resolved.did_document),
+        "didDocumentMetadata": dump(&resolved.did_document_metadata),
+    });
+    let expected = load_fixture("after-remove-service.json");
+    assert_eq!(actual, expected);
+}
+
+// ---------------------------------------------------------------------------
+// deactivate
+// ---------------------------------------------------------------------------
+
+/// `deactivate()` — `LedgerToDomain.ledgerStateToMetadata` flips
+/// `deactivated: true` whenever `deactivated || !active` holds. Document
+/// body itself is unchanged.
+#[tokio::test]
+async fn after_deactivate_matches_ts_fixture() {
+    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, initial_ledger());
+    deactivate(&contract).await.unwrap();
+
+    let mut post = initial_ledger();
+    post.deactivated = true;
+    post.active = false;
+    post.version = 2;
+    post.operation_count = 1;
+    post.updated_ms = 1_700_002_800_000;
+    contract.set_ledger(post);
+
+    let resolved = resolve(&contract).await.unwrap().expect("resolves");
+    let actual = serde_json::json!({
+        "didDocument": dump(&resolved.did_document),
+        "didDocumentMetadata": dump(&resolved.did_document_metadata),
+    });
+    let expected = load_fixture("after-deactivate.json");
     assert_eq!(actual, expected);
 }
