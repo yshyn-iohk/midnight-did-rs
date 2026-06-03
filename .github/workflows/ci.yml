@@ -1,0 +1,158 @@
+name: CI
+
+# CI for the midnight-did-rs workspace. Currently gates only the two crates
+# that build cleanly today:
+#
+#   - midnight-did-domain : pure data model, zero midnight-* deps (34 tests)
+#   - midnight-did-api    : depends only on domain (92 tests)
+#
+# The third workspace crate `midnight-did` (the Compact codegen runtime) is
+# intentionally NOT in CI yet — it is blocked on an upstream halo2
+# ParamsKZG API skew in the Nix-pinned midnight-transient-crypto snapshot.
+# Once the flake input resolves, a follow-up will add it (likely behind a
+# `nix build` step rather than bare cargo).
+#
+# Two jobs:
+#   - pre-check: cargo fmt --check + clippy -D warnings on Linux. Fast (<3 min).
+#   - test:      cargo test --locked on Linux AND macOS to catch platform
+#                -dependent encoding / hashing / serialization bugs.
+
+on:
+  pull_request:
+    paths:
+      - "crates/midnight-did-domain/**"
+      - "crates/midnight-did-api/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ci.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "crates/midnight-did-domain/**"
+      - "crates/midnight-did-api/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ci.yml"
+  workflow_dispatch:
+
+# Default to no permissions; each job opts in to the minimum it needs.
+# This shrinks the blast radius if any third-party action is compromised.
+permissions: {}
+
+# Cancel superseded runs on the same PR / branch — saves CI minutes when
+# a contributor pushes a fixup commit before the previous run finishes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # Incremental compilation buys nothing in CI (no warm target dir between
+  # runs) and just bloats the cache.
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUST_BACKTRACE: short
+  RUSTUP_MAX_RETRIES: 10
+
+jobs:
+  # Fast pre-checks: formatting + lints. Gated on Linux only — fmt/clippy
+  # output does not vary by host OS, so doubling the matrix here is waste.
+  pre-check:
+    name: Format + Clippy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable (branch)
+
+      - name: Install Rust components
+        run: rustup component add rustfmt clippy
+
+      # Cache only the registry index + crate cache + git deps. The target/
+      # directory is NOT cached here because the pre-check job builds very
+      # little (clippy reuses any cargo-check artifacts but does not need
+      # a full target/ to be cheap).
+      - name: Cache Cargo registry and git trees
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      # `cargo fmt -p <pkg> --check` scopes formatting to just the two
+      # crates we gate on. The third (midnight-did) is excluded so its
+      # current breakage cannot block PRs to the working crates.
+      - name: Check formatting (domain + api)
+        run: |
+          cargo fmt -p midnight-did-domain --check
+          cargo fmt -p midnight-did-api --check
+
+      # Clippy with -D warnings turns lints into errors. Scoped per-crate
+      # for the same reason as fmt above.
+      - name: Run Clippy on midnight-did-domain
+        run: cargo clippy -p midnight-did-domain --all-targets -- -D warnings
+
+      - name: Run Clippy on midnight-did-api
+        run: cargo clippy -p midnight-did-api --all-targets -- -D warnings
+
+  # Test matrix on Linux + macOS. The domain crate does its own canonical
+  # JSON / multibase / multihash encoding, which is exactly the kind of
+  # code that breaks on subtle platform differences (locale, default hash
+  # word size, filesystem case sensitivity). Running both OSes is cheap
+  # insurance.
+  test:
+    name: Test ${{ matrix.os }}
+    needs: pre-check
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable (branch)
+
+      - name: Cache Cargo registry and git trees
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      # Separate target/ cache, keyed on Cargo.lock + crate sources so it
+      # invalidates when our code changes but is reused across unrelated
+      # PRs. `restore-keys` lets a stale-but-close cache seed a fresh one.
+      - name: Cache target directory
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: target
+          key: ${{ runner.os }}-target-did-${{ hashFiles('Cargo.lock', 'crates/midnight-did-domain/**', 'crates/midnight-did-api/**') }}
+          restore-keys: |
+            ${{ runner.os }}-target-did-
+
+      # --locked guarantees Cargo.lock is honored bit-for-bit; a PR that
+      # forgets to commit a lockfile update will fail here rather than
+      # silently resolving to a newer transitive dep.
+      - name: Run tests (domain + api)
+        run: cargo test -p midnight-did-domain -p midnight-did-api --locked
