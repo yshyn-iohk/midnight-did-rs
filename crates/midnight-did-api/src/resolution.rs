@@ -213,11 +213,7 @@ fn ledger_verification_method_type_to_domain(typ: VerificationMethodType) -> Res
 
 /// Map a ledger-wire JWK back to a domain JWK, applying the OKP-no-y rule.
 pub fn ledger_jwk_to_domain(jwk: &LedgerPublicKeyJwk) -> Result<PublicKeyJwk, ApiError> {
-    let y_value = if jwk.y.is_empty() {
-        None
-    } else {
-        Some(jwk.y.clone())
-    };
+    let y_value = if jwk.y.is_empty() { None } else { Some(jwk.y.clone()) };
     // OKP profiles must not include y; collapse empty-y to None then assert.
     if matches!(jwk.kty, KeyType::OKP) && y_value.is_some() {
         return Err(ApiError::mapping("OKP ledger publicKeyJwk.y must be empty"));
@@ -312,14 +308,18 @@ fn parse_service_type(raw: &str) -> Result<ServiceType, ApiError> {
         let parsed: Vec<String> =
             serde_json::from_str(value).map_err(|_| ApiError::mapping("Invalid service type: malformed JSON array"))?;
         if parsed.is_empty() || parsed.iter().any(|s| s.trim().is_empty()) {
-            return Err(ApiError::mapping("Invalid service type: expected non-empty unique strings"));
+            return Err(ApiError::mapping(
+                "Invalid service type: expected non-empty unique strings",
+            ));
         }
         let trimmed: Vec<String> = parsed.iter().map(|s| s.trim().to_owned()).collect();
         let mut dedup = trimmed.clone();
         dedup.sort();
         dedup.dedup();
         if dedup.len() != trimmed.len() {
-            return Err(ApiError::mapping("Invalid service type: expected non-empty unique strings"));
+            return Err(ApiError::mapping(
+                "Invalid service type: expected non-empty unique strings",
+            ));
         }
         return Ok(ServiceType::Many(trimmed));
     }
@@ -391,7 +391,20 @@ fn format_iso8601(seconds: u64) -> Option<String> {
             return None;
         }
     }
-    let month_days = [31, if is_leap(year) { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let month_days = [
+        31,
+        if is_leap(year) { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
+    ];
     let mut month = 0usize;
     while month < month_days.len() && days >= month_days[month] {
         days -= month_days[month];
@@ -462,7 +475,9 @@ mod tests {
     #[test]
     fn maps_verification_methods_into_document() {
         let mut state = DidLedgerSnapshot::default();
-        state.verification_methods.insert("#key-1".into(), p256_method("#key-1"));
+        state
+            .verification_methods
+            .insert("#key-1".into(), p256_method("#key-1"));
         let doc = ledger_state_to_did_document(&state, MidnightNetwork::Testnet, ADDR).unwrap();
         let vms = doc.verification_method.unwrap();
         assert_eq!(vms.len(), 1);

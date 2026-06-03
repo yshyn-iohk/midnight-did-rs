@@ -30,8 +30,8 @@ use crate::{
     contract::{DidContract, FinalizedTxData},
     error::ApiError,
     private_state::{
-        DidPrivateState, PrivateStateStore, clear_pending_controller_private_state,
-        save_pending_controller_private_state, save_private_state, PrivateStateSlot,
+        DidPrivateState, PrivateStateSlot, PrivateStateStore, clear_pending_controller_private_state,
+        save_pending_controller_private_state, save_private_state,
     },
 };
 

@@ -31,25 +31,24 @@ use std::collections::BTreeMap;
 
 use midnight_did_api::{
     contract::{
-        DidLedgerSnapshot, JubjubPointHex, LedgerVerificationMethodRelation, MapMutation,
-        SchnorrJubjubSignature, SetMutation,
+        DidLedgerSnapshot, JubjubPointHex, LedgerVerificationMethodRelation, MapMutation, SchnorrJubjubSignature,
+        SetMutation,
         mock::{RecordedCall, RecordingContract},
     },
     error::ApiError,
     ledger_mappers::SchnorrJubjubVerificationMethod,
     verification_method_operations::{
-        VERIFICATION_METHOD_RELATIONS, add_schnorr_jubjub_verification_method,
-        add_verification_method, add_verification_method_relation,
-        remove_schnorr_jubjub_verification_method, remove_verification_method,
-        remove_verification_method_relation, update_verification_method,
-        verification_method_relation_memberships, verify_schnorr_jubjub_digest_signature,
+        VERIFICATION_METHOD_RELATIONS, add_schnorr_jubjub_verification_method, add_verification_method,
+        add_verification_method_relation, remove_schnorr_jubjub_verification_method, remove_verification_method,
+        remove_verification_method_relation, update_verification_method, verification_method_relation_memberships,
+        verify_schnorr_jubjub_digest_signature,
     },
 };
 use midnight_did_domain::{
     crypto_codecs::encode_base64url,
     did_document::{
-        CurveType, DidKeyId, DidString, KeyType, PublicKeyJwk, VerificationMethod,
-        VerificationMethodRelation, VerificationMethodType,
+        CurveType, DidKeyId, DidString, KeyType, PublicKeyJwk, VerificationMethod, VerificationMethodRelation,
+        VerificationMethodType,
     },
     midnight::MidnightNetwork,
 };
@@ -91,12 +90,7 @@ fn ed25519_vm(id: &str) -> VerificationMethod {
 async fn verifies_schnorr_jubjub_signature_with_normalized_method_id() {
     let c = contract();
     let absolute_method_id = format!("{}#key-1", did_subject());
-    let digest = [
-        "1".to_string(),
-        "2".to_string(),
-        "3".to_string(),
-        "4".to_string(),
-    ];
+    let digest = ["1".to_string(), "2".to_string(), "3".to_string(), "4".to_string()];
     let signature = SchnorrJubjubSignature {
         bytes_hex: "deadbeef".into(),
     };
@@ -228,11 +222,15 @@ async fn add_schnorr_jubjub_verification_method_records_insert() {
     };
     add_schnorr_jubjub_verification_method(&c, &vm).await.expect("add ok");
     let calls = c.calls();
-    assert!(matches!(
-        &calls[..],
-        [RecordedCall::SetSchnorrJubjubVerificationMethod(ledger, MapMutation::Insert)]
-            if ledger.id == "#key-sj"
-    ), "{:?}", calls);
+    assert!(
+        matches!(
+            &calls[..],
+            [RecordedCall::SetSchnorrJubjubVerificationMethod(ledger, MapMutation::Insert)]
+                if ledger.id == "#key-sj"
+        ),
+        "{:?}",
+        calls
+    );
 }
 
 #[tokio::test]

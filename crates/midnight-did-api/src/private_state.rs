@@ -317,7 +317,9 @@ mod tests {
     async fn save_and_restore_round_trip() {
         let store = InMemoryPrivateStateStore::new();
         let state = DidPrivateState { secret_key: [7u8; 32] };
-        save_private_state(&store, state.clone(), PrivateStateSlot::Active).await.unwrap();
+        save_private_state(&store, state.clone(), PrivateStateSlot::Active)
+            .await
+            .unwrap();
         let restored = restore_private_state(&store, PrivateStateSlot::Active).await.unwrap();
         assert_eq!(restored, Some(state));
     }
@@ -325,7 +327,9 @@ mod tests {
     #[tokio::test]
     async fn require_errors_when_missing() {
         let store = InMemoryPrivateStateStore::new();
-        let err = require_private_state(&store, PrivateStateSlot::Active).await.unwrap_err();
+        let err = require_private_state(&store, PrivateStateSlot::Active)
+            .await
+            .unwrap_err();
         assert!(matches!(err, ApiError::MissingPrivateState));
     }
 
@@ -337,7 +341,9 @@ mod tests {
             .unwrap();
         let err = recover_pending_controller_private_state(
             &store,
-            RecoverPendingControllerPrivateStateOptions { rotation_finalized: false },
+            RecoverPendingControllerPrivateStateOptions {
+                rotation_finalized: false,
+            },
         )
         .await
         .unwrap_err();
@@ -348,10 +354,14 @@ mod tests {
     async fn recover_promotes_pending_to_active() {
         let store = InMemoryPrivateStateStore::new();
         let pending = DidPrivateState { secret_key: [9u8; 32] };
-        save_pending_controller_private_state(&store, pending.clone()).await.unwrap();
+        save_pending_controller_private_state(&store, pending.clone())
+            .await
+            .unwrap();
         let recovered = recover_pending_controller_private_state(
             &store,
-            RecoverPendingControllerPrivateStateOptions { rotation_finalized: true },
+            RecoverPendingControllerPrivateStateOptions {
+                rotation_finalized: true,
+            },
         )
         .await
         .unwrap();

@@ -155,7 +155,9 @@ where
     C: DidContract + ?Sized,
 {
     let ledger = verification_method_to_ledger(did_contract, verification_method)?;
-    Ok(did_contract.set_verification_method(ledger, MapMutation::Insert).await?)
+    Ok(did_contract
+        .set_verification_method(ledger, MapMutation::Insert)
+        .await?)
 }
 
 /// `updateVerificationMethod`.
@@ -167,7 +169,9 @@ where
     C: DidContract + ?Sized,
 {
     let ledger = verification_method_to_ledger(did_contract, verification_method)?;
-    Ok(did_contract.set_verification_method(ledger, MapMutation::Update).await?)
+    Ok(did_contract
+        .set_verification_method(ledger, MapMutation::Update)
+        .await?)
 }
 
 /// `removeVerificationMethod` — purges relation memberships then removes
@@ -220,7 +224,9 @@ where
 {
     let normalized = normalize_bound_fragment_id_for(did_contract, method_id, BoundIdField::MethodId)?;
     purge_verification_method_from_all_relations(did_contract, &normalized).await?;
-    Ok(did_contract.remove_schnorr_jubjub_verification_method(normalized).await?)
+    Ok(did_contract
+        .remove_schnorr_jubjub_verification_method(normalized)
+        .await?)
 }
 
 /// `verifySchnorrJubjubDigestSignature`.

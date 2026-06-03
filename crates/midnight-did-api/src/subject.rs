@@ -70,8 +70,8 @@ mod tests {
     #[test]
     fn normalizes_bare_fragment_id() {
         let contract = RecordingContract::new(ADDR, MidnightNetwork::Testnet);
-        let id = normalize_bound_fragment_id_for(&contract, "key-1", BoundIdField::VerificationMethodId)
-            .expect("normalize");
+        let id =
+            normalize_bound_fragment_id_for(&contract, "key-1", BoundIdField::VerificationMethodId).expect("normalize");
         assert_eq!(id, "#key-1");
     }
 

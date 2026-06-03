@@ -260,7 +260,10 @@ pub trait DidContract: Send + Sync {
     async fn read_ledger(&self) -> Result<DidLedgerSnapshot, ContractError>;
 
     /// `rotateControllerKey(new_pk)` — new controller public key, 32 bytes.
-    async fn rotate_controller_key(&self, new_controller_public_key: [u8; 32]) -> Result<FinalizedTxData, ContractError>;
+    async fn rotate_controller_key(
+        &self,
+        new_controller_public_key: [u8; 32],
+    ) -> Result<FinalizedTxData, ContractError>;
 
     /// `setVerificationMethod(vm, mutation)`.
     async fn set_verification_method(

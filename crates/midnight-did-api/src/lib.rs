@@ -73,9 +73,9 @@ pub mod verification_method_operations;
 
 // Re-exports — common API surface.
 pub use contract::{
-    DidContract, DidLedgerSnapshot, FinalizedTxData, JubjubPointHex, LedgerPublicKeyJwk, LedgerSchnorrJubjubVerificationMethod,
-    LedgerService, LedgerVerificationMethod, LedgerVerificationMethodRelation, MapMutation, SchnorrJubjubDigest,
-    SchnorrJubjubSignature, SetMutation,
+    DidContract, DidLedgerSnapshot, FinalizedTxData, JubjubPointHex, LedgerPublicKeyJwk,
+    LedgerSchnorrJubjubVerificationMethod, LedgerService, LedgerVerificationMethod, LedgerVerificationMethodRelation,
+    MapMutation, SchnorrJubjubDigest, SchnorrJubjubSignature, SetMutation,
 };
 pub use error::{ApiError, ContractError};
 pub use ledger_mappers::{
@@ -83,9 +83,7 @@ pub use ledger_mappers::{
     relation_set_from_state, schnorr_jubjub_verification_method_to_ledger, service_to_ledger,
     verification_method_to_ledger,
 };
-pub use network_mapping::{
-    DomainToRuntime, RuntimeNetworkId, RuntimeToDomain, domain_to_runtime, runtime_to_domain,
-};
+pub use network_mapping::{DomainToRuntime, RuntimeNetworkId, RuntimeToDomain, domain_to_runtime, runtime_to_domain};
 pub use private_state::{
     DidPrivateState, InMemoryPrivateStateStore, PrivateStateError, PrivateStateSlot, PrivateStateStore,
     RecoverPendingControllerPrivateStateOptions, bind_private_state_provider, clear_pending_controller_private_state,
@@ -95,8 +93,7 @@ pub use private_state::{
 pub use resolution::{ResolvedMidnightDid, ledger_state_to_did_document, ledger_state_to_metadata, resolve};
 pub use subject::{get_did_subject, get_did_subject_for, normalize_bound_fragment_id_for};
 pub use verification_method_operations::{
-    VERIFICATION_METHOD_RELATIONS, VerificationMethodRelationMembership,
-    assert_verification_method_relation_absent, assert_verification_method_relation_present,
-    purge_verification_method_from_all_relations, remove_present_verification_method_relations,
-    verification_method_relation_memberships,
+    VERIFICATION_METHOD_RELATIONS, VerificationMethodRelationMembership, assert_verification_method_relation_absent,
+    assert_verification_method_relation_present, purge_verification_method_from_all_relations,
+    remove_present_verification_method_relations, verification_method_relation_memberships,
 };

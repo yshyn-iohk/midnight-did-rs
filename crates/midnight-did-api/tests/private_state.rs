@@ -103,7 +103,9 @@ async fn require_errors_when_empty_restore_returns_none() {
         restore_private_state(&store, PrivateStateSlot::Active).await.unwrap(),
         None
     );
-    let err = require_private_state(&store, PrivateStateSlot::Active).await.unwrap_err();
+    let err = require_private_state(&store, PrivateStateSlot::Active)
+        .await
+        .unwrap_err();
     assert!(matches!(err, ApiError::MissingPrivateState), "{err}");
 }
 
@@ -154,7 +156,9 @@ async fn init_returns_state_even_if_address_unset_during_set() {
 #[tokio::test]
 async fn restore_propagates_backend_failure() {
     let store = AlwaysFailingStore::new(FailKind::Get);
-    let err = restore_private_state(&store, PrivateStateSlot::Active).await.unwrap_err();
+    let err = restore_private_state(&store, PrivateStateSlot::Active)
+        .await
+        .unwrap_err();
     assert!(matches!(err, ApiError::InvalidArgument(_)), "{err}");
 }
 
@@ -173,9 +177,13 @@ async fn bind_private_state_provider_sets_address() {
     let store = InMemoryPrivateStateStore::strict();
     bind_private_state_provider(&store, "0xabc");
     // Now save/get should succeed (no address check).
-    save_private_state(&store, DidPrivateState { secret_key: [1u8; 32] }, PrivateStateSlot::Active)
-        .await
-        .unwrap();
+    save_private_state(
+        &store,
+        DidPrivateState { secret_key: [1u8; 32] },
+        PrivateStateSlot::Active,
+    )
+    .await
+    .unwrap();
     let restored = restore_private_state(&store, PrivateStateSlot::Active).await.unwrap();
     assert_eq!(restored.unwrap().secret_key, [1u8; 32]);
 }
@@ -187,11 +195,15 @@ async fn bind_private_state_provider_sets_address() {
 async fn recover_pending_promotes_to_active_then_clears_pending() {
     let store = InMemoryPrivateStateStore::new();
     let pending = DidPrivateState { secret_key: [9u8; 32] };
-    save_pending_controller_private_state(&store, pending.clone()).await.unwrap();
+    save_pending_controller_private_state(&store, pending.clone())
+        .await
+        .unwrap();
 
     let recovered = recover_pending_controller_private_state(
         &store,
-        RecoverPendingControllerPrivateStateOptions { rotation_finalized: true },
+        RecoverPendingControllerPrivateStateOptions {
+            rotation_finalized: true,
+        },
     )
     .await
     .unwrap();
@@ -219,7 +231,9 @@ async fn recover_pending_requires_finalization_marker() {
         .unwrap();
     let err = recover_pending_controller_private_state(
         &store,
-        RecoverPendingControllerPrivateStateOptions { rotation_finalized: false },
+        RecoverPendingControllerPrivateStateOptions {
+            rotation_finalized: false,
+        },
     )
     .await
     .unwrap_err();
@@ -244,7 +258,9 @@ async fn recover_pending_errors_when_no_pending_state() {
     let store = InMemoryPrivateStateStore::new();
     let err = recover_pending_controller_private_state(
         &store,
-        RecoverPendingControllerPrivateStateOptions { rotation_finalized: true },
+        RecoverPendingControllerPrivateStateOptions {
+            rotation_finalized: true,
+        },
     )
     .await
     .unwrap_err();

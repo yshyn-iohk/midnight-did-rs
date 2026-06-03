@@ -60,17 +60,25 @@ pub fn public_key_jwk_to_ledger(jwk: &PublicKeyJwk) -> Result<LedgerPublicKeyJwk
             "publicKeyJwk must not include private key material",
         ));
     }
-    let x_len = public_key_jwk_coordinate_byte_length(jwk.kty, jwk.crv, PublicKeyJwkCoordinate::X).ok_or_else(
-        || ApiError::invalid_argument(format!("Unsupported publicKeyJwk.x profile {:?}/{:?}", jwk.kty, jwk.crv)),
-    )?;
+    let x_len =
+        public_key_jwk_coordinate_byte_length(jwk.kty, jwk.crv, PublicKeyJwkCoordinate::X).ok_or_else(|| {
+            ApiError::invalid_argument(format!(
+                "Unsupported publicKeyJwk.x profile {:?}/{:?}",
+                jwk.kty, jwk.crv
+            ))
+        })?;
     decode_base64url_bytes(&jwk.x, x_len, "publicKeyJwk.x")?;
 
     let y_value = match &jwk.y {
         Some(y) => {
-            let y_len =
-                public_key_jwk_coordinate_byte_length(jwk.kty, jwk.crv, PublicKeyJwkCoordinate::Y).ok_or_else(
-                    || ApiError::invalid_argument(format!("Unsupported publicKeyJwk.y profile {:?}/{:?}", jwk.kty, jwk.crv)),
-                )?;
+            let y_len = public_key_jwk_coordinate_byte_length(jwk.kty, jwk.crv, PublicKeyJwkCoordinate::Y).ok_or_else(
+                || {
+                    ApiError::invalid_argument(format!(
+                        "Unsupported publicKeyJwk.y profile {:?}/{:?}",
+                        jwk.kty, jwk.crv
+                    ))
+                },
+            )?;
             decode_base64url_bytes(y, y_len, "publicKeyJwk.y")?;
             y.clone()
         }
@@ -161,7 +169,11 @@ pub fn schnorr_jubjub_verification_method_to_ledger<C: DidContract + ?Sized>(
     did_contract: &C,
     method: &SchnorrJubjubVerificationMethod,
 ) -> Result<LedgerSchnorrJubjubVerificationMethod, ApiError> {
-    let id = normalize_bound_fragment_id_for(did_contract, &method.id, BoundIdField::SchnorrJubjubVerificationMethodId)?;
+    let id = normalize_bound_fragment_id_for(
+        did_contract,
+        &method.id,
+        BoundIdField::SchnorrJubjubVerificationMethodId,
+    )?;
     Ok(LedgerSchnorrJubjubVerificationMethod {
         id,
         public_key: method.public_key.clone(),

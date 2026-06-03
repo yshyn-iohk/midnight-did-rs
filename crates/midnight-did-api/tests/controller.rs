@@ -43,7 +43,8 @@ use midnight_did_api::{
     contract::{
         DidContract, DidLedgerSnapshot, FinalizedTxData, LedgerSchnorrJubjubVerificationMethod, LedgerService,
         LedgerVerificationMethod, LedgerVerificationMethodRelation, MapMutation, SchnorrJubjubDigest,
-        SchnorrJubjubSignature, SetMutation, mock::{RecordedCall, RecordingContract},
+        SchnorrJubjubSignature, SetMutation,
+        mock::{RecordedCall, RecordingContract},
     },
     controller_operations::rotate_controller_key,
     error::{ApiError, ContractError},
@@ -272,10 +273,7 @@ impl DidContract for FailingContract {
         unimplemented!("not used by controller tests")
     }
 
-    async fn remove_schnorr_jubjub_verification_method(
-        &self,
-        _id: String,
-    ) -> Result<FinalizedTxData, ContractError> {
+    async fn remove_schnorr_jubjub_verification_method(&self, _id: String) -> Result<FinalizedTxData, ContractError> {
         unimplemented!("not used by controller tests")
     }
 

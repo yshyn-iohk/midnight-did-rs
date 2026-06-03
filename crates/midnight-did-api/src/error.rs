@@ -75,7 +75,9 @@ pub enum ApiError {
     ControllerRotationOrphaned(String),
 
     /// A private-state read returned `None` when a value was required.
-    #[error("DID controller private state is missing or malformed; import the controller secret before using this contract")]
+    #[error(
+        "DID controller private state is missing or malformed; import the controller secret before using this contract"
+    )]
     MissingPrivateState,
 
     /// The new secret-key argument to a rotation was not exactly 32 bytes.

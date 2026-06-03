@@ -34,7 +34,7 @@ use crate::{
     controller_operations::rotate_controller_key,
     document_operations::deactivate,
     error::ApiError,
-    private_state::{DidPrivateState, PrivateStateStore, init_private_state, save_private_state, PrivateStateSlot},
+    private_state::{DidPrivateState, PrivateStateSlot, PrivateStateStore, init_private_state, save_private_state},
     resolution::{ResolvedMidnightDid, resolve},
 };
 
@@ -157,7 +157,12 @@ where
     S: PrivateStateStore + ?Sized,
 {
     let result = deactivate(did_contract).await?;
-    save_private_state(store, DidPrivateState { secret_key: [0u8; 32] }, PrivateStateSlot::Active).await?;
+    save_private_state(
+        store,
+        DidPrivateState { secret_key: [0u8; 32] },
+        PrivateStateSlot::Active,
+    )
+    .await?;
     Ok(result)
 }
 

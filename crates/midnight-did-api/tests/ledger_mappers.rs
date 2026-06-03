@@ -25,20 +25,15 @@
 use std::collections::BTreeMap;
 
 use midnight_did_api::{
-    contract::{
-        DidLedgerSnapshot, LedgerVerificationMethodRelation, mock::RecordingContract,
-    },
+    contract::{DidLedgerSnapshot, LedgerVerificationMethodRelation, mock::RecordingContract},
     error::ApiError,
-    ledger_mappers::{
-        public_key_jwk_to_ledger, relation_set_from_state,
-        verification_method_to_ledger,
-    },
+    ledger_mappers::{public_key_jwk_to_ledger, relation_set_from_state, verification_method_to_ledger},
 };
 use midnight_did_domain::{
     crypto_codecs::encode_base64url,
     did_document::{
-        CurveType, DidKeyId, DidString, KeyType, PublicKeyJwk, VerificationMethod,
-        VerificationMethodRelation, VerificationMethodType,
+        CurveType, DidKeyId, DidString, KeyType, PublicKeyJwk, VerificationMethod, VerificationMethodRelation,
+        VerificationMethodType,
     },
     midnight::MidnightNetwork,
 };
