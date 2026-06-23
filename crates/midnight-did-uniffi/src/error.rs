@@ -108,9 +108,11 @@ impl From<ApiError> for FlatError {
                     "relation {relation} already contains verification method {method_id}"
                 ))
             }
-            ApiError::Verification(VerificationError::RelationMissing { relation, method_id }) => FlatError::validation(
-                format!("relation {relation} does not contain verification method {method_id}"),
-            ),
+            ApiError::Verification(VerificationError::RelationMissing { relation, method_id }) => {
+                FlatError::validation(format!(
+                    "relation {relation} does not contain verification method {method_id}"
+                ))
+            }
             ApiError::Controller(ControllerError::RotationOrphaned(msg)) => {
                 FlatError::contract(format!("controller rotation orphaned: {msg}"))
             }
