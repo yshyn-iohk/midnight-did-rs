@@ -45,6 +45,7 @@ pub mod crypto_codecs;
 pub mod did_document;
 pub mod did_registrar;
 pub mod did_resolver;
+pub mod ids;
 pub mod ledger_utils;
 pub mod uri;
 
