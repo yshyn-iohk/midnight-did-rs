@@ -355,7 +355,15 @@ pub fn public_key_jwk_coordinate_byte_length(
 }
 
 /// Public-key JWK (DID-Core: no private `d` material allowed).
+///
+/// R1 step 4a: deserialisation now runs the same validation as
+/// [`Self::new`] via `#[serde(try_from = "PublicKeyJwkWire")]` —
+/// JSON-loaded values cannot be in an invalid state. The
+/// `PublicKeyJwkWire` shim is a structurally-identical helper used
+/// only for serde wire format; its [`TryFrom`] impl delegates to
+/// `Self::new`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "PublicKeyJwkWire")]
 pub struct PublicKeyJwk {
     /// Key type.
     pub kty: KeyType,
@@ -372,7 +380,78 @@ pub struct PublicKeyJwk {
     pub extensions: BTreeMap<String, JsonValue>,
 }
 
+/// Wire-format shim for [`PublicKeyJwk`] deserialisation. The shim
+/// has the same field shape as [`PublicKeyJwk`] but `#[derive]`s its
+/// `Deserialize` straight from serde — meaning the JSON wire format
+/// is byte-identical. The `TryFrom<PublicKeyJwkWire> for PublicKeyJwk`
+/// impl below routes through [`PublicKeyJwk::new`], so validation
+/// runs at the deserialisation gate.
+///
+/// R1 step 4a; private to the crate (serde's `try_from` resolves it
+/// at attribute expansion time).
+#[derive(Deserialize)]
+pub(crate) struct PublicKeyJwkWire {
+    kty: KeyType,
+    crv: CurveType,
+    x: String,
+    #[serde(default)]
+    y: Option<String>,
+    #[serde(flatten)]
+    extensions: BTreeMap<String, JsonValue>,
+}
+
+impl TryFrom<PublicKeyJwkWire> for PublicKeyJwk {
+    type Error = ValidationError;
+    fn try_from(w: PublicKeyJwkWire) -> Result<Self, Self::Error> {
+        PublicKeyJwk::new(NewPublicKeyJwk {
+            kty: w.kty,
+            crv: w.crv,
+            x: w.x,
+            y: w.y,
+            extensions: w.extensions,
+        })
+    }
+}
+
+/// Parameters for [`PublicKeyJwk::new`]. Mirrors the field shape of
+/// [`PublicKeyJwk`] but carries no validation — `::new` is the gate.
+///
+/// R1 step 4a: separate "raw input" from "validated value".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewPublicKeyJwk {
+    /// Key type.
+    pub kty: KeyType,
+    /// Curve.
+    pub crv: CurveType,
+    /// X coordinate (base64url).
+    pub x: String,
+    /// Optional Y coordinate (base64url).
+    pub y: Option<String>,
+    /// Catch-all for additional public-only JWK members so we don't
+    /// drop resolver-specific keywords on the floor.
+    pub extensions: BTreeMap<String, JsonValue>,
+}
+
 impl PublicKeyJwk {
+    /// Construct a `PublicKeyJwk` from raw inputs, running the
+    /// W3C-compliant validation (no private key material; OKP/EC
+    /// kty-crv coherence; coordinate lengths) at the gate.
+    ///
+    /// R1 step 4a: this is the preferred constructor. Returns
+    /// [`ValidationError`] (step 6 will swap to a domain-specific
+    /// `VerificationError`) if any invariant is violated.
+    pub fn new(params: NewPublicKeyJwk) -> Result<Self, ValidationError> {
+        let jwk = Self {
+            kty: params.kty,
+            crv: params.crv,
+            x: params.x,
+            y: params.y,
+            extensions: params.extensions,
+        };
+        jwk.validate()?;
+        Ok(jwk)
+    }
+
     /// Run all JWK validation checks. Returns the structured list of issues.
     pub fn validate(&self) -> Result<(), ValidationError> {
         let issues = self.collect_issues();
@@ -466,7 +545,44 @@ pub struct VerificationMethod {
     pub public_key_jwk: PublicKeyJwk,
 }
 
+/// Parameters for [`VerificationMethod::new`]. Mirrors the field
+/// shape of [`VerificationMethod`] but carries no validation —
+/// `::new` is the gate.
+///
+/// R1 step 4a: separates "raw input" from "validated value". Same
+/// inputs as the legacy [`CreateVerificationMethodParams`] but with
+/// a typed [`PublicKeyJwk`] (the legacy params accepted the same
+/// type — no behavioural change).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewVerificationMethod {
+    /// Key id (DID URL with fragment).
+    pub id: String,
+    /// Method type keyword.
+    pub type_: VerificationMethodType,
+    /// Controller DID.
+    pub controller: String,
+    /// Embedded public JWK.
+    pub public_key_jwk: PublicKeyJwk,
+}
+
 impl VerificationMethod {
+    /// Construct a `VerificationMethod` from raw inputs, running the
+    /// W3C-compliant validation (id format, controller DID format,
+    /// embedded JWK validity) at the gate.
+    ///
+    /// R1 step 4a: this is the preferred constructor. The legacy
+    /// [`create_verification_method`] free function delegates here.
+    pub fn new(input: NewVerificationMethod) -> Result<Self, ValidationError> {
+        let vm = Self {
+            id: DidKeyId::parse(input.id)?,
+            type_: input.type_,
+            controller: DidString::parse(input.controller)?,
+            public_key_jwk: input.public_key_jwk,
+        };
+        vm.validate()?;
+        Ok(vm)
+    }
+
     /// Validate this method's id, controller, and embedded JWK.
     pub fn validate(&self) -> Result<(), ValidationError> {
         let mut issues = Vec::new();
@@ -532,7 +648,40 @@ pub struct Service {
     pub service_endpoint: ServiceEndpoint,
 }
 
+/// Parameters for [`Service::new`]. Mirrors the field shape of
+/// [`Service`] but carries no validation — `::new` is the gate.
+///
+/// R1 step 4a: separates "raw input" from "validated value". Same
+/// inputs as the legacy [`CreateServiceParams`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewService {
+    /// Either a DID URL or a relative reference (`#fragment`).
+    pub id: String,
+    /// Service type keyword(s).
+    pub type_: ServiceType,
+    /// Endpoint(s).
+    pub service_endpoint: ServiceEndpoint,
+}
+
 impl Service {
+    /// Construct a `Service` from raw inputs, running the W3C
+    /// structural validation (id is a DID URL or relative reference,
+    /// type is non-empty, endpoint is well-formed) at the gate and
+    /// normalising the endpoint shape as part of construction.
+    ///
+    /// R1 step 4a: this is the preferred constructor. The legacy
+    /// [`create_service`] free function delegates here.
+    pub fn new(input: NewService) -> Result<Self, ValidationError> {
+        let mut svc = Self {
+            id: input.id,
+            type_: input.type_,
+            service_endpoint: input.service_endpoint,
+        };
+        svc.validate()?;
+        svc.service_endpoint = normalize_service_endpoint(svc.service_endpoint);
+        Ok(svc)
+    }
+
     /// Run id and serviceEndpoint structural checks. Endpoint normalization
     /// is handled separately via [`normalize_service_endpoint`].
     pub fn validate(&self) -> Result<(), ValidationError> {
@@ -1002,17 +1151,20 @@ pub struct CreateVerificationMethodParams {
 }
 
 /// Build a verification method, running the same validation as the TS helper.
+///
+/// R1 step 4a deprecation note: prefer [`VerificationMethod::new`]
+/// with a [`NewVerificationMethod`] input — same behaviour, more
+/// idiomatic shape. This free function delegates there and will be
+/// retired in R1 step 4c.
 pub fn create_verification_method(
     params: CreateVerificationMethodParams,
 ) -> Result<VerificationMethod, ValidationError> {
-    let vm = VerificationMethod {
-        id: DidKeyId::parse(params.id)?,
+    VerificationMethod::new(NewVerificationMethod {
+        id: params.id,
         type_: params.type_,
-        controller: DidString::parse(params.controller)?,
+        controller: params.controller,
         public_key_jwk: params.public_key_jwk,
-    };
-    vm.validate()?;
-    Ok(vm)
+    })
 }
 
 /// Parameters accepted by [`create_service`].
@@ -1027,15 +1179,17 @@ pub struct CreateServiceParams {
 }
 
 /// Build a service, validating and normalizing the endpoint.
+///
+/// R1 step 4a deprecation note: prefer [`Service::new`] with a
+/// [`NewService`] input — same behaviour, more idiomatic shape.
+/// This free function delegates there and will be retired in R1
+/// step 4c.
 pub fn create_service(params: CreateServiceParams) -> Result<Service, ValidationError> {
-    let mut svc = Service {
+    Service::new(NewService {
         id: params.id,
         type_: params.type_,
         service_endpoint: params.service_endpoint,
-    };
-    svc.validate()?;
-    svc.service_endpoint = normalize_service_endpoint(svc.service_endpoint);
-    Ok(svc)
+    })
 }
 
 /// Parameters accepted by [`create_did_document`].
