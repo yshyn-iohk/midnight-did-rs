@@ -48,9 +48,9 @@ use crate::midnight_did::{
 };
 use midnight_did_domain::crypto_codecs::{CodecError, decode_base64url, encode_base64url};
 use midnight_did_domain::did_document::{
-    CreateServiceParams, CreateVerificationMethodParams, CurveType, DidString, DocumentContext, KeyType, PublicKeyJwk,
-    Service, ServiceEndpoint, ServiceType, ValidationError, VerificationMethod, VerificationMethodType, create_service,
-    create_verification_method,
+    CreateServiceParams, CreateVerificationMethodParams, CurveType, DidString, DocumentContext, KeyType,
+    NewPublicKeyJwk, PublicKeyJwk, Service, ServiceEndpoint, ServiceType, ValidationError, VerificationMethod,
+    VerificationMethodType, create_service, create_verification_method,
 };
 
 // ---------------------------------------------------------------------------
@@ -812,13 +812,14 @@ mod tests {
             also_known_as: vec![],
             verification_method: vec![OffchainVerificationMethod {
                 id: "#key-1".into(),
-                public_key_jwk: PublicKeyJwk {
+                public_key_jwk: PublicKeyJwk::new(NewPublicKeyJwk {
                     kty: KeyType::OKP,
                     crv: CurveType::Ed25519,
                     x: encode_base64url(&[1u8; 32]),
                     y: None,
                     extensions: Default::default(),
-                },
+                })
+                .expect("sample_state jwk is valid"),
                 relationships: OffchainVerificationRelationships {
                     authentication: true,
                     ..Default::default()
@@ -857,13 +858,14 @@ mod tests {
 
     #[test]
     fn key_kind_round_trip() {
-        let jwk = PublicKeyJwk {
+        let jwk = PublicKeyJwk::new(NewPublicKeyJwk {
             kty: KeyType::OKP,
             crv: CurveType::Ed25519,
             x: encode_base64url(&[7u8; 32]),
             y: None,
             extensions: Default::default(),
-        };
+        })
+        .unwrap();
         let kind = key_kind_from_jwk(&jwk).unwrap();
         assert_eq!(kind, OffchainKeyKind::Ed25519);
         let back = jwk_from_key_kind(kind, &jwk.x, "");
