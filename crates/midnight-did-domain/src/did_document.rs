@@ -1219,6 +1219,247 @@ pub struct CreateDidDocumentParams {
     pub service: Option<Vec<Service>>,
 }
 
+/// Fluent builder for [`DidDocument`] (R1 step 5).
+///
+/// The builder accumulates verification methods, services, and
+/// relations incrementally, then runs full cross-reference
+/// validation on [`DidDocumentBuilder::build`]:
+///
+/// - Subject DID is well-formed.
+/// - No duplicate verification-method ids.
+/// - No duplicate service ids.
+/// - Every `authentication` / `assertion_method` / `key_agreement` /
+///   `capability_invocation` / `capability_delegation` entry refers
+///   to a verification method that's present in the document.
+///
+/// Example:
+///
+/// ```ignore
+/// let key = VerificationMethod::new(NewVerificationMethod {
+///     id: "did:midnight:testnet:abc#key-1".to_string(),
+///     type_: VerificationMethodType::JsonWebKey,
+///     controller: "did:midnight:testnet:abc".to_string(),
+///     public_key_jwk: jwk,
+/// })?;
+/// let key_id = key.id.clone();
+///
+/// let doc = DidDocumentBuilder::new("did:midnight:testnet:abc")
+///     .add_verification_method(key)
+///     .authentication(vec![key_id])
+///     .build()?;
+/// ```
+///
+/// Defaults `@context` to the standard DID-Core context when unset.
+#[derive(Debug, Clone)]
+pub struct DidDocumentBuilder {
+    id: String,
+    context: Option<DocumentContext>,
+    also_known_as: Option<Vec<String>>,
+    controller: Option<Controller>,
+    verification_method: Vec<VerificationMethod>,
+    authentication: Vec<DidKeyId>,
+    assertion_method: Vec<DidKeyId>,
+    key_agreement: Vec<DidKeyId>,
+    capability_invocation: Vec<DidKeyId>,
+    capability_delegation: Vec<DidKeyId>,
+    service: Vec<Service>,
+}
+
+impl DidDocumentBuilder {
+    /// Start a new builder for the given DID subject string. Subject
+    /// validity is checked at [`Self::build`] time so the builder
+    /// itself never fails — the construction path remains fluent.
+    pub fn new(id: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            context: None,
+            also_known_as: None,
+            controller: None,
+            verification_method: Vec::new(),
+            authentication: Vec::new(),
+            assertion_method: Vec::new(),
+            key_agreement: Vec::new(),
+            capability_invocation: Vec::new(),
+            capability_delegation: Vec::new(),
+            service: Vec::new(),
+        }
+    }
+
+    /// Override the JSON-LD `@context`. Defaults to
+    /// `https://www.w3.org/ns/did/v1` when unset.
+    pub fn context(mut self, ctx: DocumentContext) -> Self {
+        self.context = Some(ctx);
+        self
+    }
+
+    /// Set `alsoKnownAs` aliases.
+    pub fn also_known_as(mut self, aliases: Vec<String>) -> Self {
+        self.also_known_as = Some(aliases);
+        self
+    }
+
+    /// Set the `controller` (single DID or array).
+    pub fn controller(mut self, c: Controller) -> Self {
+        self.controller = Some(c);
+        self
+    }
+
+    /// Append a verification method. Cross-reference validation on
+    /// [`Self::build`] ensures no duplicates and that any relation
+    /// referencing this VM's id finds it.
+    pub fn add_verification_method(mut self, vm: VerificationMethod) -> Self {
+        self.verification_method.push(vm);
+        self
+    }
+
+    /// Append a service. [`Self::build`] enforces no duplicates by id.
+    pub fn add_service(mut self, svc: Service) -> Self {
+        self.service.push(svc);
+        self
+    }
+
+    /// Set the `authentication` relation. Each id must reference an
+    /// existing verification method.
+    pub fn authentication(mut self, ids: Vec<DidKeyId>) -> Self {
+        self.authentication = ids;
+        self
+    }
+
+    /// Set the `assertionMethod` relation.
+    pub fn assertion_method(mut self, ids: Vec<DidKeyId>) -> Self {
+        self.assertion_method = ids;
+        self
+    }
+
+    /// Set the `keyAgreement` relation.
+    pub fn key_agreement(mut self, ids: Vec<DidKeyId>) -> Self {
+        self.key_agreement = ids;
+        self
+    }
+
+    /// Set the `capabilityInvocation` relation.
+    pub fn capability_invocation(mut self, ids: Vec<DidKeyId>) -> Self {
+        self.capability_invocation = ids;
+        self
+    }
+
+    /// Set the `capabilityDelegation` relation.
+    pub fn capability_delegation(mut self, ids: Vec<DidKeyId>) -> Self {
+        self.capability_delegation = ids;
+        self
+    }
+
+    /// Consume the builder and produce a fully-validated
+    /// [`DidDocument`]. Runs:
+    ///
+    /// 1. Subject DID parse;
+    /// 2. Per-VM and per-Service validation (already done at their
+    ///    own `::new`, but re-checked defensively);
+    /// 3. Duplicate-id detection across VMs and across services;
+    /// 4. Cross-reference: every relation id must match a VM id;
+    /// 5. Existing `DidDocument::validate()` runs as the final
+    ///    catch-all.
+    pub fn build(self) -> Result<DidDocument, ValidationError> {
+        let subject = DidString::parse(self.id)?;
+
+        let mut issues: Vec<ValidationIssue> = Vec::new();
+
+        // Duplicate verification-method ids.
+        let mut vm_id_set = std::collections::HashSet::new();
+        for vm in &self.verification_method {
+            if !vm_id_set.insert(vm.id.0.clone()) {
+                issues.push(ValidationIssue::new(format!(
+                    "duplicate verificationMethod id: {}",
+                    vm.id.0
+                )));
+            }
+        }
+
+        // Duplicate service ids.
+        let mut svc_id_set = std::collections::HashSet::new();
+        for svc in &self.service {
+            if !svc_id_set.insert(svc.id.clone()) {
+                issues.push(ValidationIssue::new(format!(
+                    "duplicate service id: {}",
+                    svc.id
+                )));
+            }
+        }
+
+        // Cross-reference: every relation id ∈ vm_id_set.
+        for (kind, ids) in [
+            ("authentication", &self.authentication),
+            ("assertionMethod", &self.assertion_method),
+            ("keyAgreement", &self.key_agreement),
+            ("capabilityInvocation", &self.capability_invocation),
+            ("capabilityDelegation", &self.capability_delegation),
+        ] {
+            for id in ids {
+                if !vm_id_set.contains(&id.0) {
+                    issues.push(ValidationIssue::new(format!(
+                        "{kind} references unknown verificationMethod id: {}",
+                        id.0
+                    )));
+                }
+            }
+        }
+
+        if !issues.is_empty() {
+            return Err(ValidationError::from_issues(issues));
+        }
+
+        let doc = DidDocument {
+            context: self
+                .context
+                .unwrap_or(DocumentContext::One("https://www.w3.org/ns/did/v1".into())),
+            id: subject,
+            also_known_as: self.also_known_as,
+            controller: self.controller,
+            verification_method: if self.verification_method.is_empty() {
+                None
+            } else {
+                Some(self.verification_method)
+            },
+            authentication: if self.authentication.is_empty() {
+                None
+            } else {
+                Some(self.authentication)
+            },
+            assertion_method: if self.assertion_method.is_empty() {
+                None
+            } else {
+                Some(self.assertion_method)
+            },
+            key_agreement: if self.key_agreement.is_empty() {
+                None
+            } else {
+                Some(self.key_agreement)
+            },
+            capability_invocation: if self.capability_invocation.is_empty() {
+                None
+            } else {
+                Some(self.capability_invocation)
+            },
+            capability_delegation: if self.capability_delegation.is_empty() {
+                None
+            } else {
+                Some(self.capability_delegation)
+            },
+            service: if self.service.is_empty() {
+                None
+            } else {
+                Some(self.service)
+            },
+            extra: BTreeMap::new(),
+        };
+        // Final defensive validation — catches anything the builder
+        // didn't pre-screen (e.g. context-edge cases the legacy
+        // `validate()` knows about).
+        doc.validate()?;
+        Ok(doc.with_normalized_service_endpoints())
+    }
+}
+
 /// Build a fully validated DID Document. Defaults `@context` to the standard
 /// DID-Core context when unset.
 pub fn create_did_document(params: CreateDidDocumentParams) -> Result<DidDocument, ValidationError> {
