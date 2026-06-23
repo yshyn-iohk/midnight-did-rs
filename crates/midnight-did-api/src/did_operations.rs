@@ -50,28 +50,35 @@ pub use crate::verification_method_operations::{
     update_schnorr_jubjub_verification_method, update_verification_method, verify_schnorr_jubjub_digest_signature,
 };
 
-/// `createDID(didContract, providers, secretKey?)` — Rust port of the high
-/// level "create" entry point. The TS source uses this to (a) ensure the
-/// private state slot is seeded and (b) capture the controller secret key
-/// into the store, before the deploy / find-contract flow returns.
+/// `createDID(didContract, providers, secretKey)` — Rust port of the
+/// high level "create" entry point.
 ///
-/// In the Rust port the contract is assumed already deployed (the runtime
-/// crate owns deployment). This helper records the controller secret into
-/// the active slot so subsequent controller-bound operations succeed.
+/// R1 step 7 (v0.2.0): the `secret_key` parameter is now **required**.
+/// The pre-v0.2.0 `Option<[u8; 32]>` shape silently fell back to
+/// `[0u8; 32]` when `None` was passed — a real footgun that
+/// production callers could trip without knowing. The library never
+/// decides whether to generate or accept key material; that's the
+/// caller's responsibility. The reference CLI provides a
+/// `--generate-secret` flag that wraps `rand::thread_rng().r#gen()`
+/// for ergonomic ad-hoc use.
+///
+/// The TS source uses this to (a) ensure the private state slot is
+/// seeded and (b) capture the controller secret key into the store,
+/// before the deploy / find-contract flow returns. In the Rust port
+/// the contract is assumed already deployed (the runtime crate owns
+/// deployment). This helper records the controller secret into the
+/// active slot so subsequent controller-bound operations succeed.
 pub async fn create_did<C, S>(
     did_contract: &C,
     store: &S,
-    secret_key: Option<[u8; 32]>,
+    secret_key: [u8; 32],
 ) -> Result<DidPrivateState, ApiError>
 where
     C: DidContract + ?Sized,
     S: PrivateStateStore + ?Sized,
 {
     crate::private_state::bind_private_state_provider(store, &did_contract.contract_address());
-    // Stable test-friendly default: all-zero key. Production callers
-    // should always pass an explicit `secret_key` from a CSPRNG.
-    let sk = secret_key.unwrap_or([0u8; 32]);
-    init_private_state(store, sk).await
+    init_private_state(store, secret_key).await
 }
 
 /// Update path — orchestrates a partial document update. Each operation
@@ -180,7 +187,7 @@ mod tests {
     async fn create_did_seeds_active_slot() {
         let contract = RecordingContract::new(ADDR, MidnightNetwork::Testnet);
         let store = InMemoryPrivateStateStore::new();
-        let state = create_did(&contract, &store, Some([3u8; 32])).await.unwrap();
+        let state = create_did(&contract, &store, [3u8; 32]).await.unwrap();
         assert_eq!(state.secret_key, [3u8; 32]);
         let restored = restore_private_state(&store, PrivateStateSlot::Active).await.unwrap();
         assert_eq!(restored.unwrap().secret_key, [3u8; 32]);

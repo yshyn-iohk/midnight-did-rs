@@ -176,7 +176,7 @@ async fn after_rotate_controller_key_matches_ts_fixture() {
     // update its ledger snapshot in response to the circuit call — the test
     // installs the post-rotate ledger by hand so the fixture parity assertion
     // is reproducible.
-    create_did(&contract, &store, Some([1u8; 32])).await.unwrap();
+    create_did(&contract, &store, [1u8; 32]).await.unwrap();
     rotate_controller_key(&contract, &store, [2u8; 32], [0xffu8; 32])
         .await
         .unwrap();
@@ -237,7 +237,7 @@ async fn create_did_seeds_active_slot_and_resolves_empty_document() {
     let store = InMemoryPrivateStateStore::new();
     let secret_key = [7u8; 32];
 
-    create_did(&contract, &store, Some(secret_key)).await.unwrap();
+    create_did(&contract, &store, secret_key).await.unwrap();
     let active = restore_private_state(&store, PrivateStateSlot::Active).await.unwrap();
     assert_eq!(active.unwrap().secret_key, secret_key);
 
@@ -258,7 +258,7 @@ async fn rotate_controller_key_then_add_and_remove_aka() {
     let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, initial_ledger());
     let store = InMemoryPrivateStateStore::new();
 
-    create_did(&contract, &store, Some([1u8; 32])).await.unwrap();
+    create_did(&contract, &store, [1u8; 32]).await.unwrap();
     rotate_controller_key(&contract, &store, [2u8; 32], [0xffu8; 32])
         .await
         .unwrap();

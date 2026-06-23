@@ -58,7 +58,7 @@ pub async fn create_did(
 
     let contract = handle.contract.lock().await;
     let store = InMemoryPrivateStateStore::new();
-    let _state = midnight_did_api::did_operations::create_did(&*contract, &store, Some(_seed))
+    let _state = midnight_did_api::did_operations::create_did(&*contract, &store, _seed)
         .await
         .map_err(FlatError::from)?;
 

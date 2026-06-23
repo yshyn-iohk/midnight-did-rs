@@ -190,7 +190,7 @@ impl FlowDriver {
     }
 
     async fn step_create(&mut self) -> Result<StepOutput> {
-        create_did(&self.contract, &self.store, Some(INITIAL_SECRET_KEY))
+        create_did(&self.contract, &self.store, INITIAL_SECRET_KEY)
             .await
             .context("create_did failed")?;
         // The mock contract already starts at the initial ledger; capture it.
