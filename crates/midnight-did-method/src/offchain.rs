@@ -41,6 +41,7 @@ use blake2::{Blake2s, Digest, digest::consts::U32};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::hex_ext::HashOutputExt;
 use crate::midnight_did::{
     MidnightDidError, MidnightDidString, MidnightNetwork, OffchainStateHashHex, create_midnight_did_string,
     parse_midnight_did_string,
@@ -371,11 +372,18 @@ pub trait CompactValueCodec {
 // ---------------------------------------------------------------------------
 
 /// Compute the off-chain state hash from a raw MOD1 frame.
+///
+/// v0.2.0: `OffchainStateHashHex` is now an alias for
+/// [`midnight_base_crypto::hash::HashOutput`] — the in-memory shape is
+/// the 32-byte digest directly, so the `hex::encode(...)` round-trip
+/// the prior String-wrapped shadow needed is gone.
 pub fn bytes_to_state_hash(bytes: &[u8]) -> OffchainStateHash {
     let mut hasher = Blake2s::<U32>::new();
     hasher.update(bytes);
     let digest = hasher.finalize();
-    OffchainStateHashHex(hex::encode(digest))
+    // Blake2s::<U32>::finalize() yields a GenericArray<u8, U32> — the
+    // <U32, [u8; 32]> conversion is From-impl'd upstream.
+    OffchainStateHashHex(digest.into())
 }
 
 fn from_base64url(value: &str) -> Result<Vec<u8>, OffchainError> {
@@ -472,8 +480,12 @@ fn validate_state_shape(state: &OffchainMidnightDidState) -> Result<(), Offchain
 // ---------------------------------------------------------------------------
 
 /// Build a `did:midnight:offchain:<hash>` short-form string.
+///
+/// v0.2.0: `OffchainStateHash` is now the upstream
+/// [`midnight_base_crypto::hash::HashOutput`] type; hex rendering goes
+/// through [`crate::hex_ext::HashOutputExt::to_hex`].
 pub fn create_offchain_midnight_did_string(state_hash: &OffchainStateHash) -> MidnightDidString {
-    create_midnight_did_string(&state_hash.0, MidnightNetwork::Offchain)
+    create_midnight_did_string(&state_hash.to_hex(), MidnightNetwork::Offchain)
 }
 
 /// Encode `state`, hash the resulting MOD1 frame, and return the short-form
@@ -861,10 +873,16 @@ mod tests {
 
     #[test]
     fn state_hash_is_blake2s_of_frame() {
-        // Sanity: the hash is 32 bytes hex (64 chars), lowercase, stable.
+        // Sanity: the hash is 32 raw bytes; hex rendering is the
+        // expected 64 lowercase chars. v0.2.0: storage is `[u8; 32]`
+        // not `String`, so "lowercase-ness" is a property of the
+        // hex projection (HashOutputExt::to_hex), not the bytes
+        // themselves.
         let h = bytes_to_state_hash(b"MOD1\x00\x00\x00\x00");
-        assert_eq!(h.0.len(), 64);
-        assert_eq!(h.0, h.0.to_lowercase());
+        assert_eq!(h.0.len(), 32);
+        let hex = h.to_hex();
+        assert_eq!(hex.len(), 64);
+        assert!(hex.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)));
     }
 
     #[test]

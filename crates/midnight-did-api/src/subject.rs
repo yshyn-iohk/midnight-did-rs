@@ -22,6 +22,7 @@
 
 use crate::{contract::DidContract, error::ApiError};
 use midnight_did_domain::ledger_utils::{BoundIdField, normalize_bound_fragment_id};
+use midnight_did_method::hex_ext::HashOutputExt;
 use midnight_did_method::midnight_did::{
     ContractAddress, MidnightNetwork, create_midnight_did_string, parse_contract_address,
 };
@@ -30,7 +31,11 @@ use midnight_did_method::midnight_did::{
 /// `did:midnight:<network>:<address>` for the contract.
 pub fn get_did_subject<C: DidContract + ?Sized>(did_contract: &C) -> Result<String, ApiError> {
     let addr = parse_contract_address(&did_contract.contract_address())?;
-    Ok(create_midnight_did_string(addr.0.as_str(), did_contract.network()).0)
+    // v0.2.0: ContractAddress is now the upstream type
+    // (compact_runtime::ContractAddress), so its hex rendering goes
+    // through HashOutputExt::to_hex rather than .0.as_str() on a
+    // String wrapper.
+    Ok(create_midnight_did_string(&addr.to_hex(), did_contract.network()).0)
 }
 
 /// `normalizeBoundFragmentId(didContract, value, field)` — the contract-aware
@@ -50,7 +55,7 @@ pub fn normalize_bound_fragment_id_for<C: DidContract + ?Sized>(
 /// Useful in code paths that already have the subject in hand and want to
 /// avoid the double-`parse_contract_address` call.
 pub fn get_did_subject_for(address: &ContractAddress, network: MidnightNetwork) -> String {
-    create_midnight_did_string(address.0.as_str(), network).0
+    create_midnight_did_string(&address.to_hex(), network).0
 }
 
 #[cfg(test)]

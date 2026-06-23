@@ -17,6 +17,7 @@
 //! `src/test/midnight.test.ts`. Only the pure-data behaviours are ported
 //! here — none of the original cases touch the chain.
 
+use midnight_did_method::hex_ext::HashOutputExt;
 use midnight_did_method::midnight_did::{
     MidnightDidError, MidnightNetwork, create_midnight_did_string, parse_contract_address, parse_midnight_did,
     parse_midnight_did_string,
@@ -27,8 +28,11 @@ const SAMPLE: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 #[test]
 fn parses_contract_addresses_and_builds_did_strings() {
     let address = parse_contract_address(SAMPLE).unwrap();
-    assert_eq!(address.0, SAMPLE);
-    let did = create_midnight_did_string(&address.0, MidnightNetwork::DevNet);
+    // v0.2.0: ContractAddress is now the upstream
+    // `compact_runtime::ContractAddress(pub HashOutput)` — its hex
+    // rendering goes through HashOutputExt::to_hex.
+    assert_eq!(address.to_hex(), SAMPLE);
+    let did = create_midnight_did_string(&address.to_hex(), MidnightNetwork::DevNet);
     assert_eq!(did.0, format!("did:midnight:devnet:{SAMPLE}"));
 }
 
@@ -45,7 +49,7 @@ fn parses_and_validates_midnight_did_strings() {
     assert_eq!(parsed.0, did);
     let (network, id) = parse_midnight_did(&parsed).unwrap();
     assert_eq!(network, MidnightNetwork::Testnet);
-    assert_eq!(id.as_hex(), SAMPLE);
+    assert_eq!(id.to_hex(), SAMPLE);
 }
 
 #[test]
@@ -107,5 +111,5 @@ fn accepts_long_form_offchain_did_with_encoded_state() {
     let did = format!("did:midnight:offchain:{SAMPLE}:AQIDBA");
     let parsed = parse_midnight_did(&parse_midnight_did_string(&did).unwrap()).unwrap();
     assert_eq!(parsed.0, MidnightNetwork::Offchain);
-    assert_eq!(parsed.1.as_hex(), SAMPLE);
+    assert_eq!(parsed.1.to_hex(), SAMPLE);
 }
