@@ -34,11 +34,11 @@
         "zkir-wasm": "zkir-wasm"
       },
       "locked": {
-        "lastModified": 1780513300,
-        "narHash": "sha256-uG4Ko/hwaLIxcxN4eF7xWtVU23aSxi0t48HhNvfKJRc=",
+        "lastModified": 1782199980,
+        "narHash": "sha256-myuydkM8Avqq334kF+ZNbYVY32iNigMUGnphxx3jkzA=",
         "owner": "yshyn-iohk",
         "repo": "compact",
-        "rev": "12e50a81518355923e5a107bd64c575660746cf6",
+        "rev": "1a8778d5d433db9dd51121fe30bf928989de4796",
         "type": "github"
       },
       "original": {

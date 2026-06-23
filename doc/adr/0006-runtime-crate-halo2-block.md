@@ -225,6 +225,52 @@ cargo update -p midnight-proofs
 nix develop --command true
 ```
 
+## Update — 2026-06-04 walker-gap decomposition
+
+A follow-up session traced "walker gap A" (the previously documented
+single blocker on rotateControllerKey) and found it was actually a
+cluster of four related sub-gaps. Three of them are now closed in
+compact's codegen-rust branch (commit `1a8778d`), leaving exactly one
+concrete shape to widen before regen unblocks.
+
+### Sub-gap taxonomy
+
+| ID | Description | Status |
+|---|---|---|
+| **A1** | `body-walkable?` required bare-call statements to be **non-terminal** (`(pair? (cdr stmts))` guard). did.compact's exported circuits all end with `recordUpdate();` — a terminal bare-call — which the predicate rejected. | ✅ Closed in commit `1a8778d`. Bare-call clause in `rust-passes-walker.ss:1265` no longer has the `(pair? (cdr stmts))` guard; emit-body-or-fallback's loop already handles terminal positions correctly. |
+| **A2** | `rust-passes.ss` emission filter (line 99-101) only emitted **exported** impure circuits as methods. Non-exported helpers like `recordUpdate`, `assertController`, `assertControllerCanUpdate` were skipped — and their bare-call sites then had no callee to invoke. | ✅ Closed in commit `1a8778d`. Filter relaxed to emit non-exported impure circuits as `pub(crate) fn` when their body is in fact walkable (new `impure-circuit-body-walkable?` pre-flight predicate keeps non-walkable helpers like tiny.compact's `in_state` filtered out exactly as before). |
+| **A3** | `classify-call` (`rust-passes-walker.ss:2036`) required `id-exported?` on the impure branch, so non-exported impure-circuit calls in bare-call position classified as `'unknown`. | ✅ Closed in commit `1a8778d`. The export check is dropped; both exported and non-exported impure-circuit calls now classify as `'impure-exported` (tag kept for downstream simplicity — emit shape is identical). |
+| **A4** | `recordUpdate`'s OWN body is a new shape: zero-or-more non-write public-ledger ADT-update calls (`operationCount.increment(1); version.increment(1);`) followed by one or more Cell writes (`updated = disclose(currentTimestamp());`). Neither `body-walkable?` (which only accepts a single terminal PL-call) nor `body-streaming-walkable?` matches. | ⏸ **Open.** This is the actual remaining blocker. Closing it requires extending `body-walkable?` + `emit-body-or-fallback` to walk a sequence of non-write public-ledger calls before reaching the write-accumulator phase. Roughly analogous to the existing terminal-PL-call clause but in non-terminal position with the ctx threaded through each call's vm-code expansion. Medium effort. |
+
+### What unlocks when A4 closes
+
+- `recordUpdate` becomes walkable → emit-impure-circuit emits its body
+  as `pub(crate) fn record_update` on the Contract impl.
+- `assertController` body already walkable (single assert) — emits.
+- `assertControllerCanUpdate` body walkable (`assertController();
+  assert(active, "...")` — bare-call + assert) — emits.
+- Every exported circuit in `did.compact` calls `recordUpdate()` at
+  the end. With recordUpdate emitted as a method, the bare-call sites
+  from rotateControllerKey / deactivate / setAlsoKnownAs / etc. resolve
+  to `self.record_update(ctx, ...)?` and emit cleanly.
+- `compactc --rust --skip-ts did.compact` succeeds → midnight-did-runtime's
+  `generated.rs` regenerates, picking up the already-landed Bucket 1
+  (ContractAddress FQN) + Bucket 4 (enum Default) fixes.
+- Bucket 1 + 4 fixes consume 11 + 3 = 14 of the current 30 errors.
+- Bucket 2 (EmbeddedGroupAffine, 16 errors) remains. Task #116 is
+  marked completed but the fix needs verification — either an upstream
+  midnight-transient-crypto patch or a newtype wrapper in compact-runtime.
+
+### Pin state after this update
+
+- compact pinned at `1a8778d` (codegen-rust HEAD after walker
+  generalisation).
+- The walker generalisation is non-regressive — 144+ tests-e2e-rust
+  pass.
+- did.compact still fails at line 221 (rotateControllerKey) with the
+  hard "no walker shape matched" error, now narrowly because of A4
+  rather than the broader A1-A4 cluster.
+
 ## References
 
 - `flake.nix` — `midnight-zk` input
@@ -232,3 +278,4 @@ nix develop --command true
 - `Cargo.toml` — `[patch.crates-io]` entry
 - ADR 0003 — Crate split + umbrella feature gating
 - ADR 0005 — Codegen-gap handling (the remaining workstream)
+- Compact PR [yshyn-iohk/compact#1](https://github.com/yshyn-iohk/compact/pull/1) — `1a8778d` walker generalisation
