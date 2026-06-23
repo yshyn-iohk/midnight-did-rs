@@ -62,8 +62,8 @@ use midnight_did_api::{
 use midnight_did_domain::{
     crypto_codecs::encode_base64url,
     did_document::{
-        CurveType, DidKeyId, DidString, KeyType, PublicKeyJwk, Service, ServiceEndpoint, ServiceType,
-        VerificationMethod, VerificationMethodRelation, VerificationMethodType,
+        CurveType, KeyType, NewPublicKeyJwk, NewService, NewVerificationMethod, PublicKeyJwk, Service, ServiceEndpoint,
+        ServiceType, VerificationMethod, VerificationMethodRelation, VerificationMethodType,
     },
 };
 use midnight_did_method::midnight_did::MidnightNetwork;
@@ -198,18 +198,20 @@ async fn after_set_verification_method_matches_ts_fixture() {
     let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, initial_ledger());
 
     let coord = encode_base64url(&[0u8; 32]);
-    let vm = VerificationMethod {
-        id: DidKeyId(format!("{}#key-1", did_subject())),
+    let vm = VerificationMethod::new(NewVerificationMethod {
+        id: format!("{}#key-1", did_subject()),
         type_: VerificationMethodType::JsonWebKey,
-        controller: DidString(did_subject()),
-        public_key_jwk: PublicKeyJwk {
+        controller: did_subject(),
+        public_key_jwk: PublicKeyJwk::new(NewPublicKeyJwk {
             kty: KeyType::OKP,
             crv: CurveType::Ed25519,
             x: coord,
             y: None,
             extensions: BTreeMap::new(),
-        },
-    };
+        })
+        .unwrap(),
+    })
+    .unwrap();
 
     add_verification_method(&contract, &vm).await.expect("add ok");
     // Replace ledger to reflect the insertion (mock contract is recording-only).
@@ -328,18 +330,20 @@ async fn add_verification_method_records_insert_and_resolves() {
     let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, initial_ledger());
 
     let coord = encode_base64url(&[0u8; 32]);
-    let vm = VerificationMethod {
-        id: DidKeyId(format!("{}#key-1", did_subject())),
+    let vm = VerificationMethod::new(NewVerificationMethod {
+        id: format!("{}#key-1", did_subject()),
         type_: VerificationMethodType::JsonWebKey,
-        controller: DidString(did_subject()),
-        public_key_jwk: PublicKeyJwk {
+        controller: did_subject(),
+        public_key_jwk: PublicKeyJwk::new(NewPublicKeyJwk {
             kty: KeyType::OKP,
             crv: CurveType::Ed25519,
             x: coord.clone(),
             y: None,
             extensions: BTreeMap::new(),
-        },
-    };
+        })
+        .unwrap(),
+    })
+    .unwrap();
     add_verification_method(&contract, &vm).await.unwrap();
 
     let recorded = contract
@@ -360,14 +364,15 @@ async fn add_verification_method_records_insert_and_resolves() {
 #[tokio::test]
 async fn add_then_remove_service_records_expected_calls() {
     let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, initial_ledger());
-    let svc = Service {
+    let svc = Service::new(NewService {
         id: "service-1".into(),
         type_: ServiceType::One("DIDCommV2".into()),
         service_endpoint: ServiceEndpoint::Array(vec![
             midnight_did_domain::did_document::ServiceEndpointArrayEntry::Uri("https://localhost/didcomm/v2".into()),
             midnight_did_domain::did_document::ServiceEndpointArrayEntry::Uri("wss://localhost/didcomm/v2".into()),
         ]),
-    };
+    })
+    .unwrap();
     add_service(&contract, &svc).await.unwrap();
     remove_service(&contract, "service-1").await.unwrap();
 
@@ -489,18 +494,20 @@ fn vm_key_1_ed25519_ledger() -> LedgerVerificationMethod {
 }
 
 fn vm_key_1_ed25519_domain() -> VerificationMethod {
-    VerificationMethod {
-        id: DidKeyId(format!("{}#key-1", did_subject())),
+    VerificationMethod::new(NewVerificationMethod {
+        id: format!("{}#key-1", did_subject()),
         type_: VerificationMethodType::JsonWebKey,
-        controller: DidString(did_subject()),
-        public_key_jwk: PublicKeyJwk {
+        controller: did_subject(),
+        public_key_jwk: PublicKeyJwk::new(NewPublicKeyJwk {
             kty: KeyType::OKP,
             crv: CurveType::Ed25519,
             x: encode_base64url(&[0u8; 32]),
             y: None,
             extensions: BTreeMap::new(),
-        },
-    }
+        })
+        .unwrap(),
+    })
+    .unwrap()
 }
 
 // ---------------------------------------------------------------------------
@@ -575,13 +582,20 @@ async fn after_set_vm_update_matches_ts_fixture() {
 
     // Update: same id, new coord bytes (0x77…).
     let new_x = encode_base64url(&[0x77u8; 32]);
-    let updated_vm = VerificationMethod {
-        public_key_jwk: PublicKeyJwk {
+    let updated_vm = VerificationMethod::new(NewVerificationMethod {
+        id: format!("{}#key-1", did_subject()),
+        type_: VerificationMethodType::JsonWebKey,
+        controller: did_subject(),
+        public_key_jwk: PublicKeyJwk::new(NewPublicKeyJwk {
+            kty: KeyType::OKP,
+            crv: CurveType::Ed25519,
             x: new_x.clone(),
-            ..vm_key_1_ed25519_domain().public_key_jwk
-        },
-        ..vm_key_1_ed25519_domain()
-    };
+            y: None,
+            extensions: BTreeMap::new(),
+        })
+        .unwrap(),
+    })
+    .unwrap();
     update_verification_method(&contract, &updated_vm).await.unwrap();
 
     let mut post = initial_ledger();
@@ -773,11 +787,12 @@ async fn after_set_vm_relation_insert_matches_ts_fixture() {
 async fn after_set_service_insert_matches_ts_fixture() {
     let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, initial_ledger());
 
-    let svc = Service {
+    let svc = Service::new(NewService {
         id: "svc-1".into(),
         type_: ServiceType::One("DIDCommMessaging".into()),
         service_endpoint: ServiceEndpoint::Uri("https://example.com/didcomm".into()),
-    };
+    })
+    .unwrap();
     add_service(&contract, &svc).await.unwrap();
 
     let mut post = initial_ledger();
