@@ -83,10 +83,10 @@ pub fn assert_verification_method_relation_absent(
 ) -> Result<(), ApiError> {
     let ledger_relation = ledger_verification_method_relation_for(relation);
     if state.relation_contains(ledger_relation, normalized_method_id) {
-        Err(ApiError::RelationAlreadyContains {
+        Err(ApiError::Verification(crate::error::VerificationError::RelationAlreadyContains {
             relation: format!("{relation:?}"),
             method_id: normalized_method_id.to_owned(),
-        })
+        }))
     } else {
         Ok(())
     }
@@ -103,10 +103,10 @@ pub fn assert_verification_method_relation_present(
     if state.relation_contains(ledger_relation, normalized_method_id) {
         Ok(())
     } else {
-        Err(ApiError::RelationMissing {
+        Err(ApiError::Verification(crate::error::VerificationError::RelationMissing {
             relation: format!("{relation:?}"),
             method_id: normalized_method_id.to_owned(),
-        })
+        }))
     }
 }
 
@@ -374,7 +374,7 @@ mod tests {
         let err = add_verification_method_relation(&contract, VerificationMethodRelation::Authentication, "key-1")
             .await
             .unwrap_err();
-        assert!(matches!(err, ApiError::RelationAlreadyContains { .. }));
+        assert!(matches!(err, ApiError::Verification(crate::error::VerificationError::RelationAlreadyContains { .. })));
     }
 
     #[tokio::test]
@@ -383,6 +383,6 @@ mod tests {
         let err = remove_verification_method_relation(&contract, VerificationMethodRelation::KeyAgreement, "key-1")
             .await
             .unwrap_err();
-        assert!(matches!(err, ApiError::RelationMissing { .. }));
+        assert!(matches!(err, ApiError::Verification(crate::error::VerificationError::RelationMissing { .. })));
     }
 }

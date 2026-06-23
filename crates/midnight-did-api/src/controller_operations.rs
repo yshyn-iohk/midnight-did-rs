@@ -75,7 +75,7 @@ where
 
     // Try to promote the new state to active.
     if let Err(promote_err) = save_private_state(store, next_state, PrivateStateSlot::Active).await {
-        return Err(ApiError::ControllerRotationOrphaned(promote_err.to_string()));
+        return Err(ApiError::Controller(crate::error::ControllerError::RotationOrphaned(promote_err.to_string())));
     }
     // Best-effort cleanup of the pending slot.
     let _ = clear_pending_controller_private_state(store).await;

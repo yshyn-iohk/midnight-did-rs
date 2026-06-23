@@ -153,7 +153,7 @@ pub fn verification_method_to_ledger<C: DidContract + ?Sized>(
     assert_midnight_key_profile(&method.public_key_jwk)?;
     let subject = crate::subject::get_did_subject(did_contract)?;
     if method.controller.0 != subject {
-        return Err(ApiError::ControllerSubjectMismatch { expected: subject });
+        return Err(ApiError::Controller(crate::error::ControllerError::SubjectMismatch { expected: subject }));
     }
     let id = normalize_bound_fragment_id_for(did_contract, &method.id.0, BoundIdField::VerificationMethodId)?;
     Ok(LedgerVerificationMethod {
@@ -307,7 +307,7 @@ mod tests {
             public_key_jwk: p256_jwk(&coord, &coord),
         };
         let err = verification_method_to_ledger(&contract, &vm).unwrap_err();
-        assert!(matches!(err, ApiError::ControllerSubjectMismatch { .. }));
+        assert!(matches!(err, ApiError::Controller(crate::error::ControllerError::SubjectMismatch { .. })));
     }
 
     #[test]

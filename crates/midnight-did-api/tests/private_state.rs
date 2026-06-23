@@ -51,15 +51,15 @@ fn from_bytes_requires_exactly_32_bytes() {
     assert!(DidPrivateState::from_bytes(&[0u8; 32]).is_ok());
     assert!(matches!(
         DidPrivateState::from_bytes(&[0u8; 31]).unwrap_err(),
-        ApiError::InvalidSecretKey
+        ApiError::Controller(midnight_did_api::error::ControllerError::InvalidSecretKey)
     ));
     assert!(matches!(
         DidPrivateState::from_bytes(&[0u8; 33]).unwrap_err(),
-        ApiError::InvalidSecretKey
+        ApiError::Controller(midnight_did_api::error::ControllerError::InvalidSecretKey)
     ));
     assert!(matches!(
         DidPrivateState::from_bytes(&[]).unwrap_err(),
-        ApiError::InvalidSecretKey
+        ApiError::Controller(midnight_did_api::error::ControllerError::InvalidSecretKey)
     ));
 }
 

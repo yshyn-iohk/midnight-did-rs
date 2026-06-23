@@ -13,11 +13,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Unified error type for the Midnight DID API layer.
+//! Domain-grouped error types for the Midnight DID API layer.
 //!
-//! All public operations return [`ApiError`]. Variants are organised by the
-//! failure category so callers can pattern-match on the error category without
-//! relying on message strings.
+//! R1 step 6 (v0.2.0): the previously flat `ApiError(13 variants)` is
+//! split by failure category into focused enums:
+//!
+//! - [`VerificationError`] — verification-method add/remove/update
+//!   failures (duplicate relations, missing relations).
+//! - [`ControllerError`] — controller-key rotation failures
+//!   (orphaned rotation, invalid secret length, subject mismatch).
+//! - [`ContractError`] — on-chain contract call failures (existed
+//!   pre-v0.2 as a nested enum; kept).
+//!
+//! [`ApiError`] is the umbrella: every public operation can return
+//! it, and every domain enum lifts into it via `#[from]`. Callers
+//! that only care about one domain can pattern-match the narrow
+//! type directly without handling unrelated variants.
 
 use thiserror::Error;
 
@@ -42,9 +53,81 @@ pub enum ContractError {
     StateUnavailable,
 }
 
-/// Top-level error returned by every public API operation.
+/// Verification-method-domain errors. Captures the small set of
+/// operation-specific failures that can occur during VM add / remove
+/// / update / relation-management.
+#[derive(Debug, Error)]
+pub enum VerificationError {
+    /// A relation already contains a verification method that callers
+    /// attempted to add.
+    #[error("relation {relation} already contains verification method {method_id}")]
+    RelationAlreadyContains {
+        /// Relation name (e.g. `"Authentication"`).
+        relation: String,
+        /// Normalized fragment id of the verification method.
+        method_id: String,
+    },
+
+    /// A relation does not contain a verification method callers
+    /// attempted to remove.
+    #[error("relation {relation} does not contain verification method {method_id}")]
+    RelationMissing {
+        /// Relation name.
+        relation: String,
+        /// Normalized fragment id of the verification method.
+        method_id: String,
+    },
+}
+
+/// Controller-key-domain errors. Captures rotation, secret-key, and
+/// controller-subject coherence failures.
+#[derive(Debug, Error)]
+pub enum ControllerError {
+    /// A controller key rotation succeeded on-chain but the pending
+    /// private state could not be promoted to active. The caller may
+    /// invoke
+    /// [`crate::private_state::recover_pending_controller_private_state`]
+    /// once the transaction is confirmed to clean up.
+    #[error("controller rotation finalized but pending state promotion failed: {0}")]
+    RotationOrphaned(String),
+
+    /// The new secret-key argument to a rotation was not exactly 32
+    /// bytes.
+    #[error("DID controller secret key must be 32 bytes")]
+    InvalidSecretKey,
+
+    /// `verificationMethod.controller` is not equal to the resolved
+    /// DID subject.
+    #[error("verificationMethod.controller must equal DID subject ({expected})")]
+    SubjectMismatch {
+        /// Expected DID string (i.e. `did:midnight:<network>:<address>`).
+        expected: String,
+    },
+}
+
+/// Top-level umbrella error returned by every public API operation
+/// that touches more than one domain. Each domain-grouped error
+/// (`VerificationError`, `ControllerError`, `ContractError`) lifts
+/// into this via `#[from]`, so operation code can use the `?`
+/// operator across domains without manual matching.
 #[derive(Debug, Error)]
 pub enum ApiError {
+    // ---- Domain-grouped lifts (R1 step 6) ---------------------------
+    /// Verification-method-domain failure (relation add/remove,
+    /// duplicate methods, ...).
+    #[error(transparent)]
+    Verification(#[from] VerificationError),
+
+    /// Controller-key-domain failure (rotation orphaned, bad secret
+    /// length, controller/subject mismatch, ...).
+    #[error(transparent)]
+    Controller(#[from] ControllerError),
+
+    /// On-chain contract call failure.
+    #[error(transparent)]
+    Contract(#[from] ContractError),
+
+    // ---- Crate-spanning transparents -------------------------------
     /// A domain-level validation rule failed.
     #[error(transparent)]
     Validation(#[from] ValidationError),
@@ -61,46 +144,12 @@ pub enum ApiError {
     #[error(transparent)]
     MidnightDid(#[from] MidnightDidError),
 
-    /// The on-chain contract call failed.
-    #[error(transparent)]
-    Contract(#[from] ContractError),
-
-    /// A controller key rotation failed and the pending private state was
-    /// orphaned. The caller may invoke
-    /// [`crate::private_state::recover_pending_controller_private_state`] once
-    /// the transaction is confirmed.
-    #[error("controller rotation finalized but pending state promotion failed: {0}")]
-    ControllerRotationOrphaned(String),
-
+    // ---- Cross-domain leftovers ------------------------------------
     /// A private-state read returned `None` when a value was required.
     #[error(
         "DID controller private state is missing or malformed; import the controller secret before using this contract"
     )]
     MissingPrivateState,
-
-    /// The new secret-key argument to a rotation was not exactly 32 bytes.
-    #[error("DID controller secret key must be 32 bytes")]
-    InvalidSecretKey,
-
-    /// A relation already contains a verification method that callers
-    /// attempted to add.
-    #[error("relation {relation} already contains verification method {method_id}")]
-    RelationAlreadyContains {
-        /// Relation name (e.g. `"Authentication"`).
-        relation: String,
-        /// Normalized fragment id of the verification method.
-        method_id: String,
-    },
-
-    /// A relation does not contain a verification method callers attempted to
-    /// remove.
-    #[error("relation {relation} does not contain verification method {method_id}")]
-    RelationMissing {
-        /// Relation name.
-        relation: String,
-        /// Normalized fragment id of the verification method.
-        method_id: String,
-    },
 
     /// An argument value violated a documented precondition.
     #[error("invalid argument: {0}")]
@@ -109,14 +158,6 @@ pub enum ApiError {
     /// Encoding of a value (JWK coordinate, JSON, ...) failed.
     #[error("encoding error: {0}")]
     Encoding(String),
-
-    /// `verificationMethod.controller` is not equal to the resolved DID
-    /// subject.
-    #[error("verificationMethod.controller must equal DID subject ({expected})")]
-    ControllerSubjectMismatch {
-        /// Expected DID string (i.e. `did:midnight:<network>:<address>`).
-        expected: String,
-    },
 
     /// A ledger byte mapping failed (e.g. JWK coordinate decode).
     #[error("ledger mapping error: {0}")]

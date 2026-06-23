@@ -135,7 +135,7 @@ async fn keeps_pending_when_active_promotion_fails() {
         .await
         .unwrap_err();
     assert!(
-        matches!(err, ApiError::ControllerRotationOrphaned(_)),
+        matches!(err, ApiError::Controller(midnight_did_api::error::ControllerError::RotationOrphaned(_))),
         "expected ControllerRotationOrphaned, got {err}"
     );
 

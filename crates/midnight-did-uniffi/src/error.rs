@@ -100,32 +100,40 @@ impl FlatError {
 
 impl From<ApiError> for FlatError {
     fn from(err: ApiError) -> Self {
+        use midnight_did_api::error::{ControllerError, VerificationError};
         match err {
+            // R1 step 6: domain-grouped error lifts.
+            ApiError::Verification(VerificationError::RelationAlreadyContains { relation, method_id }) => {
+                FlatError::validation(format!(
+                    "relation {relation} already contains verification method {method_id}"
+                ))
+            }
+            ApiError::Verification(VerificationError::RelationMissing { relation, method_id }) => FlatError::validation(
+                format!("relation {relation} does not contain verification method {method_id}"),
+            ),
+            ApiError::Controller(ControllerError::RotationOrphaned(msg)) => {
+                FlatError::contract(format!("controller rotation orphaned: {msg}"))
+            }
+            ApiError::Controller(ControllerError::InvalidSecretKey) => {
+                FlatError::invalid_input("DID controller secret key must be 32 bytes".to_string())
+            }
+            ApiError::Controller(ControllerError::SubjectMismatch { expected }) => FlatError::validation(format!(
+                "verificationMethod.controller must equal DID subject ({expected})"
+            )),
+            ApiError::Contract(e) => FlatError::contract(e.to_string()),
+
+            // Crate-spanning transparents.
             ApiError::Validation(e) => FlatError::validation(e.to_string()),
             ApiError::Codec(e) => FlatError::invalid_input(e.to_string()),
             ApiError::LedgerUtils(e) => FlatError::validation(e.to_string()),
             ApiError::MidnightDid(e) => FlatError::validation(e.to_string()),
-            ApiError::Contract(e) => FlatError::contract(e.to_string()),
-            ApiError::ControllerRotationOrphaned(msg) => {
-                FlatError::contract(format!("controller rotation orphaned: {msg}"))
-            }
+
+            // Cross-domain leftovers.
             ApiError::MissingPrivateState => {
                 FlatError::invalid_input("DID controller private state is missing or malformed".to_string())
             }
-            ApiError::InvalidSecretKey => {
-                FlatError::invalid_input("DID controller secret key must be 32 bytes".to_string())
-            }
-            ApiError::RelationAlreadyContains { relation, method_id } => FlatError::validation(format!(
-                "relation {relation} already contains verification method {method_id}"
-            )),
-            ApiError::RelationMissing { relation, method_id } => FlatError::validation(format!(
-                "relation {relation} does not contain verification method {method_id}"
-            )),
             ApiError::InvalidArgument(msg) => FlatError::invalid_input(msg),
             ApiError::Encoding(msg) => FlatError::serde(msg),
-            ApiError::ControllerSubjectMismatch { expected } => FlatError::validation(format!(
-                "verificationMethod.controller must equal DID subject ({expected})"
-            )),
             ApiError::Mapping(msg) => FlatError::serde(msg),
         }
     }

@@ -299,7 +299,7 @@ async fn add_verification_method_relation_rejects_already_present() {
         .await
         .unwrap_err();
     match &err {
-        ApiError::RelationAlreadyContains { relation, method_id } => {
+        ApiError::Verification(midnight_did_api::error::VerificationError::RelationAlreadyContains { relation, method_id }) => {
             assert_eq!(relation, "Authentication");
             assert_eq!(method_id, "#key-1");
         }
@@ -314,7 +314,7 @@ async fn remove_verification_method_relation_rejects_when_missing() {
         .await
         .unwrap_err();
     match &err {
-        ApiError::RelationMissing { relation, method_id } => {
+        ApiError::Verification(midnight_did_api::error::VerificationError::RelationMissing { relation, method_id }) => {
             assert_eq!(relation, "KeyAgreement");
             assert_eq!(method_id, "#key-1");
         }

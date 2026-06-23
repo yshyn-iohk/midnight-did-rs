@@ -74,10 +74,10 @@ pub struct DidPrivateState {
 
 impl DidPrivateState {
     /// Build a private state from a 32-byte slice. Returns
-    /// [`ApiError::InvalidSecretKey`] for any other length.
+    /// [`ApiError::Controller(crate::error::ControllerError::InvalidSecretKey)`] for any other length.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, ApiError> {
         if bytes.len() != 32 {
-            return Err(ApiError::InvalidSecretKey);
+            return Err(ApiError::Controller(crate::error::ControllerError::InvalidSecretKey));
         }
         let mut out = [0u8; 32];
         out.copy_from_slice(bytes);
