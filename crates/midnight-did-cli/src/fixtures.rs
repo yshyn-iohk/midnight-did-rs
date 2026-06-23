@@ -26,8 +26,8 @@ use midnight_did_api::contract::{LedgerPublicKeyJwk, LedgerVerificationMethod};
 use midnight_did_domain::{
     crypto_codecs::encode_base64url,
     did_document::{
-        CurveType, DidKeyId, DidString, KeyType, PublicKeyJwk, Service, ServiceEndpoint, ServiceType,
-        VerificationMethod, VerificationMethodType,
+        CurveType, KeyType, NewPublicKeyJwk, NewService, NewVerificationMethod, PublicKeyJwk, Service, ServiceEndpoint,
+        ServiceType, VerificationMethod, VerificationMethodType,
     },
 };
 use midnight_did_method::midnight_did::MidnightNetwork;
@@ -80,24 +80,26 @@ pub fn did_subject() -> String {
 /// coordinates are fixed (32 zero bytes for `x`, 32 `0x11` bytes for `y`)
 /// so the cross-language fixtures can be compared field-by-field.
 pub fn sample_jwk() -> PublicKeyJwk {
-    PublicKeyJwk {
+    PublicKeyJwk::new(NewPublicKeyJwk {
         kty: KeyType::EC,
         crv: CurveType::P256,
         x: encode_base64url(&[0u8; 32]),
         y: Some(encode_base64url(&[0x11u8; 32])),
         extensions: BTreeMap::new(),
-    }
+    })
+    .expect("sample_jwk is valid")
 }
 
 /// Build the `VerificationMethod` value used by the JWK insert step.
 pub fn sample_verification_method() -> VerificationMethod {
     let subject = did_subject();
-    VerificationMethod {
-        id: DidKeyId(format!("{subject}{VM_FRAGMENT}")),
+    VerificationMethod::new(NewVerificationMethod {
+        id: format!("{subject}{VM_FRAGMENT}"),
         type_: VerificationMethodType::JsonWebKey,
-        controller: DidString(subject),
+        controller: subject,
         public_key_jwk: sample_jwk(),
-    }
+    })
+    .expect("sample_verification_method is valid")
 }
 
 /// Ledger-shaped view of [`sample_verification_method`].
@@ -117,9 +119,10 @@ pub fn sample_ledger_verification_method() -> LedgerVerificationMethod {
 
 /// Build the demo `LinkedDomains` service entry.
 pub fn sample_service() -> Service {
-    Service {
+    Service::new(NewService {
         id: SERVICE_ID.to_string(),
         type_: ServiceType::One("LinkedDomains".into()),
         service_endpoint: ServiceEndpoint::Uri(SERVICE_ENDPOINT_URL.into()),
-    }
+    })
+    .expect("sample_service is valid")
 }
