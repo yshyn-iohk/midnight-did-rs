@@ -21,7 +21,15 @@ rustdoc-args = ["--cfg", "docsrs"]
 path = "src/lib.rs"
 
 [dependencies]
-midnight-did-domain = { workspace = true }
+midnight-did-domain       = { workspace = true }
+# Upstream Midnight primitive types reused by the method profile:
+# `HashOutput` (32-byte hash) backs OffchainStateHash + DID identifier
+# bytes; `ContractAddress` is the on-chain identity slot. Adding them
+# at the method layer lets us drop the local String-typed shadow
+# newtypes and inherit the full derive stack (FieldRepr, FromFieldRepr,
+# BinaryHashRepr, serde, Zeroize, constant-time eq).
+midnight-base-crypto      = { workspace = true }
+compact-runtime           = { workspace = true }
 serde      = { workspace = true }
 serde_json = { workspace = true }
 thiserror  = "2"

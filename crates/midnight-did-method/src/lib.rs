@@ -44,6 +44,7 @@
 /// Crate version reported by the build.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+pub mod hex_ext;
 pub mod midnight_did;
 pub mod network_mapping;
 pub mod offchain;
