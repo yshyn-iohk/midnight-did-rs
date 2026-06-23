@@ -47,8 +47,8 @@ use midnight_did_api::{
 use midnight_did_domain::{
     crypto_codecs::encode_base64url,
     did_document::{
-        CurveType, DidKeyId, DidString, KeyType, PublicKeyJwk, VerificationMethod, VerificationMethodRelation,
-        VerificationMethodType,
+        CurveType, KeyType, NewPublicKeyJwk, NewVerificationMethod, PublicKeyJwk, VerificationMethod,
+        VerificationMethodRelation, VerificationMethodType,
     },
 };
 use midnight_did_method::midnight_did::MidnightNetwork;
@@ -69,18 +69,20 @@ fn did_subject() -> String {
 
 fn ed25519_vm(id: &str) -> VerificationMethod {
     let x = encode_base64url(&[0u8; 32]);
-    VerificationMethod {
-        id: DidKeyId(format!("{}#{id}", did_subject())),
+    VerificationMethod::new(NewVerificationMethod {
+        id: format!("{}#{id}", did_subject()),
         type_: VerificationMethodType::JsonWebKey,
-        controller: DidString(did_subject()),
-        public_key_jwk: PublicKeyJwk {
+        controller: did_subject(),
+        public_key_jwk: PublicKeyJwk::new(NewPublicKeyJwk {
             kty: KeyType::OKP,
             crv: CurveType::Ed25519,
             x,
             y: None,
             extensions: BTreeMap::new(),
-        },
-    }
+        })
+        .unwrap(),
+    })
+    .unwrap()
 }
 
 // ---------------------------------------------------------------------------
