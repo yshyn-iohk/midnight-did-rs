@@ -271,6 +271,87 @@ concrete shape to widen before regen unblocks.
   hard "no walker shape matched" error, now narrowly because of A4
   rather than the broader A1-A4 cluster.
 
+## Update — 2026-06-23 wave 2: A4 + A5 closed, A6 surfaced
+
+A follow-up TDD pass closed A4 and A5 in compact's codegen-rust
+branch. Each closure was test-gated by a focused fixture under
+`tests-e2e-rust/contracts/<name>-fixture/` whose committed lib.rs
+is byte-compared against compactc's output by
+`tests/codegen_regression.rs`. All 144+ existing tests-e2e-rust
+fixtures still pass — these are non-regressive.
+
+### A4 — multi non-write PL-call + Cell write body (closed in `b1929c4`)
+
+New fixture: `examples/multi_pl_call_fixture.compact` —
+`record_update(value: Uint<64>): []` with `ops.increment(1);
+ver.increment(1); updated = disclose(value);`. Mirrors
+did.compact's `recordUpdate` shape at minimum size.
+
+Walker change (Path A from the gap analysis):
+
+- `body-walkable?` — new clause accepting non-write PL-calls in
+  non-terminal position (single-index path, supported arg exprs).
+- `emit-body-or-fallback` — tagged `mutations` accumulator. Each
+  entry is `('cell-write idx . expr)` or `('pl-call src adt-op
+  path-elt* expr*)`, preserving source order.
+- `emit-body-mutations` — new emitter replacing `emit-body-writes`;
+  dispatches per tag, splicing per-entry builder lines into one
+  OpProgramVerify chain.
+- `pl-call-builder-lines` — shared lowering of a non-write PL call
+  into builder-call lines via `expand-vm-code` +
+  `vminstr->builder-call`.
+- `vminstr->builder-call` (`addi` case in rust-passes-emit.ss) —
+  extended to accept `vm-rust-expr` immediates (the wrapped Rust
+  expression string produced when an integer literal arg lowers
+  through a const-binding gensym, per Prod-14). Emits
+  `.addi(<expr> as u32)` matching the runtime addi parameter width.
+- Return value now properly propagates from `emit-body-mutations`
+  through `emit-body-or-fallback` — failed lowering now surfaces as
+  the expected hard codegen error rather than a silently incomplete
+  body.
+
+### A5 — tstruct ledger-read decoder (closed in `f17ddab`)
+
+`decoder-for-type` gained a `tstruct` clause that routes through
+the existing `compact_runtime::std_lib::decode_via_field_repr::<T>`.
+User structs (H6/H7 emits `#[derive(FromFieldRepr)]`) and stdlib
+structs like `ContractAddress` (derives FromFieldRepr in
+midnight-coin-structure) both decode via this single path. The
+unqualified Rust type name is already in scope at the call site via
+`use compact_runtime::*` (re-exported stdlib types) and module-scope
+user-struct emissions.
+
+### A6 — witness call in pure-circuit arg position (open)
+
+After A4 + A5 closed, compactc reaches the body of `assertController`
+at line 214 and fails on:
+
+```compact
+circuit assertController(): [] {
+  assert(controllerKey(localSecretKey()) == controllerPublicKey, "...");
+}
+```
+
+The witness call `localSecretKey()` appears as a sub-expression of a
+pure-circuit call argument. The existing assert clause in
+`emit-body-or-fallback` hoists witness subcalls before rendering, but
+if the IR has lowered the pure-circuit call into a const binding
+(Prod-13/14 era gensym), the witness ends up inside the const RHS
+where no hoisting fires. The const-binding clause's `pure-circuit`
+branch needs to mirror the assert clause's `collect-witness-subcalls`
++ `emit-hoisted-witnesses` pattern.
+
+Estimated effort: M — analogous to the assert hoister, lifted into
+the const-binding emit. Same `current-witness-call-binds`
+parameterize pattern, same `_w_<name>_N` rust-name convention.
+
+### Pin state after wave 2
+
+- compact pinned at `f17ddab` (codegen-rust HEAD after A4 + A5).
+- midnight-did-runtime still has the same 30 errors locally — regen
+  is still blocked, now by A6 instead of A1-A4.
+- compactc PR #1 CI all green after each commit.
+
 ## References
 
 - `flake.nix` — `midnight-zk` input
