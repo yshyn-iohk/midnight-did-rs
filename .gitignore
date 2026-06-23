@@ -21,3 +21,6 @@
 
 # Internal planning / research notes — lives in Obsidian, not the repo.
 docs/superpowers/
+
+# IDE / Gemini CLI scratch
+.antigravitycli/
