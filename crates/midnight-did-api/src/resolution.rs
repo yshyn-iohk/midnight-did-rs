@@ -28,8 +28,9 @@ use midnight_did_domain::{
     crypto_codecs::encode_base64url,
     did_document::{
         Controller, CurveType, DidDocument, DidDocumentMetadata, DidKeyId, DidString, DocumentContext, KeyType,
-        PublicKeyJwk, Service, ServiceEndpoint, ServiceEndpointArrayEntry, ServiceType, VerificationMethod,
-        VerificationMethodRelation, VerificationMethodType,
+        NewPublicKeyJwk, NewService, NewVerificationMethod, PublicKeyJwk, Service, ServiceEndpoint,
+        ServiceEndpointArrayEntry, ServiceType, VerificationMethod, VerificationMethodRelation,
+        VerificationMethodType,
     },
 };
 use midnight_did_method::midnight_did::{MidnightNetwork, create_midnight_did_string};
@@ -91,12 +92,12 @@ pub fn ledger_state_to_did_document(
         if !seen_ids.insert(normalized) {
             return Err(ApiError::mapping("Duplicate verification method id"));
         }
-        verification_method.push(VerificationMethod {
-            id: DidKeyId(absolute_id),
+        verification_method.push(VerificationMethod::new(NewVerificationMethod {
+            id: absolute_id,
             type_: ledger_verification_method_type_to_domain(method.typ)?,
-            controller: DidString(did.clone()),
+            controller: did.clone(),
             public_key_jwk: domain_jwk,
-        });
+        })?);
     }
     for (id, method) in &state.schnorr_jubjub_verification_methods {
         let domain_jwk = schnorr_jubjub_pk_to_jwk(method)?;
@@ -105,12 +106,12 @@ pub fn ledger_state_to_did_document(
         if !seen_ids.insert(normalized) {
             return Err(ApiError::mapping("Duplicate verification method id"));
         }
-        verification_method.push(VerificationMethod {
-            id: DidKeyId(absolute_id),
+        verification_method.push(VerificationMethod::new(NewVerificationMethod {
+            id: absolute_id,
             type_: VerificationMethodType::JsonWebKey,
-            controller: DidString(did.clone()),
+            controller: did.clone(),
             public_key_jwk: domain_jwk,
-        });
+        })?);
     }
 
     // Validate every relation entry refers to an existing verification method.
@@ -218,26 +219,26 @@ pub fn ledger_jwk_to_domain(jwk: &LedgerPublicKeyJwk) -> Result<PublicKeyJwk, Ap
     if matches!(jwk.kty, KeyType::OKP) && y_value.is_some() {
         return Err(ApiError::mapping("OKP ledger publicKeyJwk.y must be empty"));
     }
-    Ok(PublicKeyJwk {
+    Ok(PublicKeyJwk::new(NewPublicKeyJwk {
         kty: jwk.kty,
         crv: jwk.crv,
         x: jwk.x.clone(),
         y: y_value,
         extensions: BTreeMap::new(),
-    })
+    })?)
 }
 
 /// Reconstruct a Jubjub `PublicKeyJwk` from a Schnorr-Jubjub ledger entry.
 pub fn schnorr_jubjub_pk_to_jwk(method: &LedgerSchnorrJubjubVerificationMethod) -> Result<PublicKeyJwk, ApiError> {
     let x = decode_jubjub_coordinate(&method.public_key.x, "publicKey.x")?;
     let y = decode_jubjub_coordinate(&method.public_key.y, "publicKey.y")?;
-    Ok(PublicKeyJwk {
+    Ok(PublicKeyJwk::new(NewPublicKeyJwk {
         kty: KeyType::EC,
         crv: CurveType::Jubjub,
         x: encode_base64url(&x),
         y: Some(encode_base64url(&y)),
         extensions: BTreeMap::new(),
-    })
+    })?)
 }
 
 fn decode_jubjub_coordinate(hex_value: &str, label: &str) -> Result<[u8; 32], ApiError> {
@@ -292,11 +293,11 @@ fn parse_ledger_service(svc: &LedgerService, did: &str) -> Result<Service, ApiEr
     let id = absolute_did_url_reference(did, &svc.id);
     let type_ = parse_service_type(&svc.typ)?;
     let service_endpoint = parse_service_endpoint(&svc.service_endpoint)?;
-    Ok(Service {
+    Ok(Service::new(NewService {
         id,
         type_,
         service_endpoint,
-    })
+    })?)
 }
 
 fn parse_service_type(raw: &str) -> Result<ServiceType, ApiError> {
