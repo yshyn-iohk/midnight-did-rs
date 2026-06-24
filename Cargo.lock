@@ -2246,6 +2246,7 @@ dependencies = [
 name = "midnight-did-runtime"
 version = "0.2.0"
 dependencies = [
+ "async-trait",
  "compact-runtime",
  "midnight-base-crypto",
  "midnight-coin-structure",
@@ -2255,6 +2256,7 @@ dependencies = [
  "midnight-serialize",
  "midnight-storage",
  "midnight-transient-crypto",
+ "tokio",
 ]
 
 [[package]]
