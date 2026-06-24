@@ -6,7 +6,10 @@
 /// Crate version reported by the build.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+pub mod backend;
 pub mod contract;
+
+pub use backend::{Backend, BackendError, BuiltTx, FinalizedTxData, LiveBackend, RecordingBackend, ResolverBackend};
 
 #[cfg(test)]
 mod tests {

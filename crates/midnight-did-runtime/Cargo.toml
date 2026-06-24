@@ -31,3 +31,12 @@ midnight-onchain-vm       = { workspace = true }
 midnight-serialize        = { workspace = true }
 midnight-storage          = { workspace = true }
 midnight-transient-crypto = { workspace = true }
+
+# R2-1: async-trait for the I/O-substrate `Backend` trait. Pinned to
+# 0.1 to match the version already used by `midnight-did-api`.
+async-trait               = "0.1"
+
+[dev-dependencies]
+# R2-1: tokio runtime for the `Backend` impls' unit tests (current-thread,
+# no IO).
+tokio = { version = "1", features = ["macros", "rt"] }
