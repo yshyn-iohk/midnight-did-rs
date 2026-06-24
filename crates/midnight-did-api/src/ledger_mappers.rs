@@ -233,7 +233,9 @@ pub fn relation_set_from_state(
 mod tests {
     use super::*;
     use crate::contract::mock::RecordingContract;
-    use midnight_did_domain::did_document::{DidKeyId, DidString, ServiceEndpoint, ServiceType};
+    use midnight_did_domain::did_document::{
+        NewPublicKeyJwk, NewVerificationMethod, ServiceEndpoint, ServiceType,
+    };
     use midnight_did_method::midnight_did::MidnightNetwork;
     use std::collections::BTreeMap;
 
@@ -244,13 +246,14 @@ mod tests {
     }
 
     fn p256_jwk(x: &str, y: &str) -> PublicKeyJwk {
-        PublicKeyJwk {
+        PublicKeyJwk::new(NewPublicKeyJwk {
             kty: KeyType::EC,
             crv: CurveType::P256,
             x: x.into(),
             y: Some(y.into()),
             extensions: BTreeMap::new(),
-        }
+        })
+        .expect("valid P-256 JWK fixture")
     }
 
     // 32-byte all-zero coords encoded as base64url (length 43, no padding).
@@ -262,12 +265,13 @@ mod tests {
     fn maps_p256_verification_method() {
         let coord = zeros32_b64url();
         let contract = RecordingContract::new(ADDR, MidnightNetwork::Testnet);
-        let vm = VerificationMethod {
-            id: DidKeyId(format!("{}#key-1", did_subject())),
+        let vm = VerificationMethod::new(NewVerificationMethod {
+            id: format!("{}#key-1", did_subject()),
             type_: VerificationMethodType::JsonWebKey,
-            controller: DidString(did_subject()),
+            controller: did_subject(),
             public_key_jwk: p256_jwk(&coord, &coord),
-        };
+        })
+        .expect("valid VM fixture");
         let ledger = verification_method_to_ledger(&contract, &vm).expect("map ok");
         assert_eq!(ledger.id, "#key-1");
         assert_eq!(ledger.typ, VerificationMethodType::JsonWebKey);
@@ -279,18 +283,23 @@ mod tests {
     fn rejects_jubjub_in_jwk_path() {
         let coord = zeros32_b64url();
         let contract = RecordingContract::new(ADDR, MidnightNetwork::Testnet);
-        let vm = VerificationMethod {
-            id: DidKeyId(format!("{}#key-2", did_subject())),
+        // Construct a Jubjub JWK via ::new so structural fields pass; the
+        // ledger-mapper rejects Jubjub downstream.
+        let jubjub_jwk = PublicKeyJwk::new(NewPublicKeyJwk {
+            kty: KeyType::EC,
+            crv: CurveType::Jubjub,
+            x: coord.clone(),
+            y: Some(coord),
+            extensions: BTreeMap::new(),
+        })
+        .expect("valid Jubjub EC JWK at structural layer");
+        let vm = VerificationMethod::new(NewVerificationMethod {
+            id: format!("{}#key-2", did_subject()),
             type_: VerificationMethodType::JsonWebKey,
-            controller: DidString(did_subject()),
-            public_key_jwk: PublicKeyJwk {
-                kty: KeyType::EC,
-                crv: CurveType::Jubjub,
-                x: coord.clone(),
-                y: Some(coord),
-                extensions: BTreeMap::new(),
-            },
-        };
+            controller: did_subject(),
+            public_key_jwk: jubjub_jwk,
+        })
+        .expect("valid VM fixture");
         let err = verification_method_to_ledger(&contract, &vm).unwrap_err();
         assert!(matches!(err, ApiError::InvalidArgument(_)));
     }
@@ -300,12 +309,13 @@ mod tests {
         let coord = zeros32_b64url();
         let contract = RecordingContract::new(ADDR, MidnightNetwork::Testnet);
         let other = "1".repeat(64);
-        let vm = VerificationMethod {
-            id: DidKeyId(format!("did:midnight:testnet:{other}#key-1")),
+        let vm = VerificationMethod::new(NewVerificationMethod {
+            id: format!("did:midnight:testnet:{other}#key-1"),
             type_: VerificationMethodType::JsonWebKey,
-            controller: DidString(format!("did:midnight:testnet:{other}")),
+            controller: format!("did:midnight:testnet:{other}"),
             public_key_jwk: p256_jwk(&coord, &coord),
-        };
+        })
+        .expect("structurally valid VM with mismatched controller");
         let err = verification_method_to_ledger(&contract, &vm).unwrap_err();
         assert!(matches!(err, ApiError::Controller(crate::error::ControllerError::SubjectMismatch { .. })));
     }

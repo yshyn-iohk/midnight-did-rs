@@ -290,7 +290,9 @@ mod tests {
     };
     use midnight_did_domain::{
         crypto_codecs::encode_base64url,
-        did_document::{CurveType, DidKeyId, DidString, KeyType, PublicKeyJwk, VerificationMethodType},
+        did_document::{
+            CurveType, KeyType, NewPublicKeyJwk, NewVerificationMethod, PublicKeyJwk, VerificationMethodType,
+        },
     };
     use midnight_did_method::midnight_did::MidnightNetwork;
     use std::collections::BTreeMap;
@@ -303,18 +305,21 @@ mod tests {
 
     fn p256_vm(id: &str) -> VerificationMethod {
         let coord = encode_base64url(&[0u8; 32]);
-        VerificationMethod {
-            id: DidKeyId(format!("{}#{}", did_subject(), id)),
+        let jwk = PublicKeyJwk::new(NewPublicKeyJwk {
+            kty: KeyType::EC,
+            crv: CurveType::P256,
+            x: coord.clone(),
+            y: Some(coord),
+            extensions: BTreeMap::new(),
+        })
+        .expect("valid P-256 JWK fixture");
+        VerificationMethod::new(NewVerificationMethod {
+            id: format!("{}#{}", did_subject(), id),
             type_: VerificationMethodType::JsonWebKey,
-            controller: DidString(did_subject()),
-            public_key_jwk: PublicKeyJwk {
-                kty: KeyType::EC,
-                crv: CurveType::P256,
-                x: coord.clone(),
-                y: Some(coord),
-                extensions: BTreeMap::new(),
-            },
-        }
+            controller: did_subject(),
+            public_key_jwk: jwk,
+        })
+        .expect("valid VM fixture")
     }
 
     #[tokio::test]

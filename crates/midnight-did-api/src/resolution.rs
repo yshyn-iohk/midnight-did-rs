@@ -133,16 +133,18 @@ pub fn ledger_state_to_did_document(
     assert_targets("capabilityInvocation", &state.capability_invocation_relation)?;
     assert_targets("capabilityDelegation", &state.capability_delegation_relation)?;
 
-    let map_relation = |members: &[String]| -> Option<Vec<DidKeyId>> {
+    let map_relation = |members: &[String]| -> Result<Option<Vec<DidKeyId>>, ApiError> {
         if members.is_empty() {
-            None
+            Ok(None)
         } else {
-            Some(
-                members
-                    .iter()
-                    .map(|m| DidKeyId(verification_method_fragment_id(m)))
-                    .collect(),
-            )
+            let parsed = members
+                .iter()
+                .map(|m| {
+                    DidKeyId::parse(verification_method_fragment_id(m))
+                        .map_err(|e| ApiError::mapping(format!("invalid DID key id in relation: {e}")))
+                })
+                .collect::<Result<Vec<_>, _>>()?;
+            Ok(Some(parsed))
         }
     };
 
@@ -173,14 +175,16 @@ pub fn ledger_state_to_did_document(
             "https://www.w3.org/ns/did/v1".into(),
             "https://w3c.github.io/vc-jws-2020/contexts/v1".into(),
         ]),
-        id: DidString(did.clone()),
-        controller: Some(Controller::One(DidString(did))),
+        id: DidString::parse(did.clone()).map_err(|e| ApiError::mapping(format!("invalid DID id: {e}")))?,
+        controller: Some(Controller::One(
+            DidString::parse(did.clone()).map_err(|e| ApiError::mapping(format!("invalid DID controller: {e}")))?,
+        )),
         verification_method: verification_method_opt,
-        authentication: map_relation(&state.authentication_relation),
-        assertion_method: map_relation(&state.assertion_method_relation),
-        key_agreement: map_relation(&state.key_agreement_relation),
-        capability_invocation: map_relation(&state.capability_invocation_relation),
-        capability_delegation: map_relation(&state.capability_delegation_relation),
+        authentication: map_relation(&state.authentication_relation)?,
+        assertion_method: map_relation(&state.assertion_method_relation)?,
+        key_agreement: map_relation(&state.key_agreement_relation)?,
+        capability_invocation: map_relation(&state.capability_invocation_relation)?,
+        capability_delegation: map_relation(&state.capability_delegation_relation)?,
         also_known_as,
         service: services,
         extra: BTreeMap::new(),

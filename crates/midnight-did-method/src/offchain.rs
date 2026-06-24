@@ -48,9 +48,8 @@ use crate::midnight_did::{
 };
 use midnight_did_domain::crypto_codecs::{CodecError, decode_base64url, encode_base64url};
 use midnight_did_domain::did_document::{
-    CreateServiceParams, CreateVerificationMethodParams, CurveType, DidString, DocumentContext, KeyType,
-    NewPublicKeyJwk, PublicKeyJwk, Service, ServiceEndpoint, ServiceType, ValidationError, VerificationMethod,
-    VerificationMethodType, create_service, create_verification_method,
+    CurveType, DidString, DocumentContext, KeyType, NewPublicKeyJwk, NewService, NewVerificationMethod, PublicKeyJwk,
+    Service, ServiceEndpoint, ServiceType, ValidationError, VerificationMethod, VerificationMethodType,
 };
 
 // ---------------------------------------------------------------------------
@@ -216,7 +215,7 @@ pub fn key_kind_from_jwk(jwk: &PublicKeyJwk) -> Result<OffchainKeyKind, Offchain
 
 /// Re-build a JWK from an [`OffchainKeyKind`] tag and base64url-encoded
 /// coordinate strings. The matching inverse is [`key_kind_from_jwk`].
-pub fn jwk_from_key_kind(kind: OffchainKeyKind, x: &str, y: &str) -> PublicKeyJwk {
+pub fn jwk_from_key_kind(kind: OffchainKeyKind, x: &str, y: &str) -> Result<PublicKeyJwk, ValidationError> {
     use CurveType::*;
     use KeyType::*;
     let (kty, crv, has_y) = match kind {
@@ -228,13 +227,13 @@ pub fn jwk_from_key_kind(kind: OffchainKeyKind, x: &str, y: &str) -> PublicKeyJw
         OffchainKeyKind::BLS12381G1 => (OKP, BLS12381G1, false),
         OffchainKeyKind::BLS12381G2 => (OKP, BLS12381G2, false),
     };
-    PublicKeyJwk {
+    PublicKeyJwk::new(NewPublicKeyJwk {
         kty,
         crv,
         x: x.to_owned(),
         y: if has_y { Some(y.to_owned()) } else { None },
         extensions: Default::default(),
-    }
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -550,7 +549,7 @@ pub fn offchain_verification_method_to_did_document_method(
     did: &MidnightDidString,
     method: &OffchainVerificationMethod,
 ) -> Result<VerificationMethod, ValidationError> {
-    create_verification_method(CreateVerificationMethodParams {
+    VerificationMethod::new(NewVerificationMethod {
         id: method.id.clone(),
         type_: VerificationMethodType::JsonWebKey,
         controller: did.0.clone(),
@@ -560,7 +559,7 @@ pub fn offchain_verification_method_to_did_document_method(
 
 /// Project an off-chain service entry to the W3C representation.
 pub fn offchain_service_to_did_document_service(service: &OffchainService) -> Result<Service, ValidationError> {
-    create_service(CreateServiceParams {
+    Service::new(NewService {
         id: service.id.clone(),
         type_: ServiceType::One(service.type_.clone()),
         service_endpoint: ServiceEndpoint::Uri(service.service_endpoint.clone()),
@@ -868,7 +867,7 @@ mod tests {
         .unwrap();
         let kind = key_kind_from_jwk(&jwk).unwrap();
         assert_eq!(kind, OffchainKeyKind::Ed25519);
-        let back = jwk_from_key_kind(kind, &jwk.x, "");
+        let back = jwk_from_key_kind(kind, &jwk.x, "").unwrap();
         assert_eq!(back.kty, jwk.kty);
         assert_eq!(back.crv, jwk.crv);
     }
