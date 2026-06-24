@@ -178,6 +178,59 @@ construction replaceable by regenerated emission.
 shim a given circuit in `extensions.rs` or wait for codegen.
 Per-circuit decision made by whoever picks up the next iteration.
 
+## Update — 2026-06-24: did.compact walker gaps closed end-to-end
+
+All Shape A–E body shapes — plus the additional sub-shapes that
+surfaced once those were addressed — now route through `compactc
+--rust` without "no walker shape matched" errors. The closure ladder
+landed in the compact branch `codegen-rust` as A1 through A19; see
+[compact/docs/superpowers/notes/2026-06-24-walker-gap-status.md](https://github.com/midnightntwrk/compact-codegen-rust/blob/codegen-rust/docs/superpowers/notes/2026-06-24-walker-gap-status.md)
+for the per-step ledger. Notable closures in the second half of the
+sequence:
+
+- **A12** — if/else-if assert+pl-call branches (`setAlsoKnownAs`).
+- **A14** — in-branch lifted-let + Map.insert struct value
+  (`setVerificationMethod` Insert/Update arms).
+- **A15** — non-pure circuit call in expression position
+  (`verificationMethodExists` inlined into asserts).
+- **A16** — Map.insert with struct value via runtime-keyed idx.
+- **A17** — `setVerificationMethodRelation` (multi-stmt pure body +
+  drifted-ctx const-binding + bare-call arm).
+- **A18** — dropped the `body-needs-streaming?` preference gate, so
+  terminal multi-arm if/else-if with single pl-call arms route to
+  streaming (closes `insertVerificationMethodRelation` and
+  `removeVerificationMethodRelationFromLedger`).
+- **A19** — `stmt->if-chain-body` covers single-return non-unit
+  bodies AND multi-arm if/else-if chains returning a non-unit value
+  (closes `verificationMethodExists`,
+  `verificationMethodRelationMember`).
+
+**Status of the generated lib.rs.** With A19 in place, the codegen
+emits a ~2.7k-line `lib.rs`. `cargo check -p midnight-did-runtime`
+still reports ~12 unique errors split into:
+
+- **Compiler-side** (need a follow-up commit in compact):
+  - **Bug-1** — `id` not in scope inside inlined ADT-read calls.
+    Root cause: `inline-circuit-call` substitutes formals via
+    `local-binds` at the ctor-expr-rust layer, but
+    `emit-ledger-read-expr-with-args` → `expr->vm-value` → `expr-rust`
+    doesn't see `local-binds`. Fix: pre-substitute Expression nodes
+    OR thread `local-binds` through the vm-value pipeline.
+  - **Bug-2** — `ConstructorContext.current_query_context` field
+    missing (constructor uses wrong context type).
+  - **Bug-3** — `CircuitContext::clone` trait bound (A17 added
+    `ctx.clone()`; generated impl needs `PS: Clone`).
+- **Runtime-side** (R5):
+  - `EmbeddedGroupAffine`: `FromFieldRepr / field_repr / field_size
+    / binary_repr / binary_len`.
+  - `[Fr; 4]`: `Aligned / FromFieldRepr` + `Value: From<[Fr; 4]>`.
+  - `schnorr_verify` witness declaration.
+  - `OpProgramVerify::rem` reportedly missing — likely a Cargo.toml
+    lag in this repo (the compact branch's `op_builder.rs:78`
+    already exposes it). Refresh the compact flake input.
+
+These are the next iteration's load-bearing work items.
+
 ## References
 
 - Codegen-gap survey:
