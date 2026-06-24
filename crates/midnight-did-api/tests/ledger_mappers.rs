@@ -32,8 +32,8 @@ use midnight_did_api::{
 use midnight_did_domain::{
     crypto_codecs::encode_base64url,
     did_document::{
-        CurveType, DidKeyId, DidString, KeyType, PublicKeyJwk, VerificationMethod, VerificationMethodRelation,
-        VerificationMethodType,
+        CurveType, DidKeyId, DidString, KeyType, NewPublicKeyJwk, PublicKeyJwk, VerificationMethod,
+        VerificationMethodRelation, VerificationMethodType,
     },
 };
 use midnight_did_method::midnight_did::MidnightNetwork;
@@ -124,81 +124,71 @@ fn normalizes_bls12381_g1_okp_keys_to_ledger_y_sentinel() {
 // One Rust test per rejection path.
 // ---------------------------------------------------------------------------
 
+// R1-4b Stage 4: with `PublicKeyJwk::new` fallible, these invalid JWK shapes
+// are rejected at construction time. The downstream
+// `verification_method_to_ledger` rejection paths are unreachable for these
+// inputs, so each test asserts on `PublicKeyJwk::new`'s error path instead —
+// preserving the "invalid JWK is rejected at the boundary" intent.
+
 #[test]
-fn rejects_okp_keys_with_y_coordinate() {
+fn publickeyjwk_new_rejects_okp_with_y() {
     let x = zeros32_b64url();
-    let vm = vm_with_jwk(
-        "key-okp-with-y",
-        PublicKeyJwk {
-            kty: KeyType::OKP,
-            crv: CurveType::Ed25519,
-            x: x.clone(),
-            y: Some(x),
-            extensions: BTreeMap::new(),
-        },
-    );
-    let err = verification_method_to_ledger(&contract(), &vm).unwrap_err();
+    let err = PublicKeyJwk::new(NewPublicKeyJwk {
+        kty: KeyType::OKP,
+        crv: CurveType::Ed25519,
+        x: x.clone(),
+        y: Some(x),
+        extensions: BTreeMap::new(),
+    })
+    .unwrap_err();
     let msg = err.to_string();
-    assert!(matches!(err, ApiError::InvalidArgument(_)), "{msg}");
     assert!(msg.contains("OKP keys must not include a y coordinate"), "{msg}");
 }
 
 #[test]
-fn rejects_ec_keys_without_y_coordinate() {
+fn publickeyjwk_new_rejects_ec_without_y() {
     let x = zeros32_b64url();
-    let vm = vm_with_jwk(
-        "key-ec-without-y",
-        PublicKeyJwk {
-            kty: KeyType::EC,
-            crv: CurveType::P256,
-            x,
-            y: None,
-            extensions: BTreeMap::new(),
-        },
-    );
-    let err = verification_method_to_ledger(&contract(), &vm).unwrap_err();
+    let err = PublicKeyJwk::new(NewPublicKeyJwk {
+        kty: KeyType::EC,
+        crv: CurveType::P256,
+        x,
+        y: None,
+        extensions: BTreeMap::new(),
+    })
+    .unwrap_err();
     let msg = err.to_string();
-    assert!(matches!(err, ApiError::InvalidArgument(_)), "{msg}");
-    assert!(msg.contains("EC keys must include a y coordinate"), "{msg}");
+    assert!(msg.contains("Non-OKP keys must include a y coordinate"), "{msg}");
 }
 
 #[test]
-fn rejects_bls_okp_keys_with_y_coordinate() {
+fn publickeyjwk_new_rejects_bls_okp_with_y() {
     let x = bls_g1_b64url();
-    let vm = vm_with_jwk(
-        "key-bls-with-y",
-        PublicKeyJwk {
-            kty: KeyType::OKP,
-            crv: CurveType::BLS12381G1,
-            x: x.clone(),
-            y: Some(zeros32_b64url()),
-            extensions: BTreeMap::new(),
-        },
-    );
-    let err = verification_method_to_ledger(&contract(), &vm).unwrap_err();
+    let err = PublicKeyJwk::new(NewPublicKeyJwk {
+        kty: KeyType::OKP,
+        crv: CurveType::BLS12381G1,
+        x: x.clone(),
+        y: Some(zeros32_b64url()),
+        extensions: BTreeMap::new(),
+    })
+    .unwrap_err();
     let msg = err.to_string();
-    assert!(matches!(err, ApiError::InvalidArgument(_)), "{msg}");
     assert!(msg.contains("OKP keys must not include a y coordinate"), "{msg}");
 }
 
 #[test]
-fn rejects_jwk_with_private_key_material() {
+fn publickeyjwk_new_rejects_private_key_material() {
     let x = zeros32_b64url();
     let mut extensions = BTreeMap::new();
     extensions.insert("d".into(), serde_json::Value::String(x.clone()));
-    let vm = vm_with_jwk(
-        "key-with-private-d",
-        PublicKeyJwk {
-            kty: KeyType::OKP,
-            crv: CurveType::Ed25519,
-            x,
-            y: None,
-            extensions,
-        },
-    );
-    let err = verification_method_to_ledger(&contract(), &vm).unwrap_err();
+    let err = PublicKeyJwk::new(NewPublicKeyJwk {
+        kty: KeyType::OKP,
+        crv: CurveType::Ed25519,
+        x,
+        y: None,
+        extensions,
+    })
+    .unwrap_err();
     let msg = err.to_string();
-    assert!(matches!(err, ApiError::InvalidArgument(_)), "{msg}");
     assert!(msg.contains("private key material"), "{msg}");
 }
 
