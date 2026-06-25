@@ -57,7 +57,7 @@ pub async fn remove_service<C: DidContract + ?Sized>(
 mod tests {
     use super::*;
     use crate::contract::mock::{RecordedCall, RecordingContract};
-    use midnight_did_domain::did_document::{ServiceEndpoint, ServiceType};
+    use midnight_did_domain::did_document::{NewService, ServiceEndpoint, ServiceType};
     use midnight_did_method::midnight_did::MidnightNetwork;
 
     const ADDR: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
@@ -65,11 +65,12 @@ mod tests {
     #[tokio::test]
     async fn adds_a_service() {
         let contract = RecordingContract::new(ADDR, MidnightNetwork::Testnet);
-        let svc = Service {
+        let svc = Service::new(NewService {
             id: "svc-1".into(),
             type_: ServiceType::One("LinkedDomains".into()),
             service_endpoint: ServiceEndpoint::Uri("https://example.com".into()),
-        };
+        })
+        .expect("valid service");
         add_service(&contract, &svc).await.unwrap();
         let calls = contract.calls();
         assert!(matches!(

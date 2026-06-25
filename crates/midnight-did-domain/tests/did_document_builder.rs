@@ -63,7 +63,7 @@ const SUBJECT: &str = "did:midnight:testnet:abc";
 #[test]
 fn builder_with_no_vms_or_services_builds() {
     let doc = DidDocumentBuilder::new(SUBJECT).build().expect("minimal doc valid");
-    assert_eq!(doc.id.0, SUBJECT);
+    assert_eq!(doc.id.as_str(), SUBJECT);
 }
 
 #[test]
@@ -79,7 +79,7 @@ fn builder_with_single_vm_builds() {
 #[test]
 fn builder_with_authentication_reference_to_existing_vm_builds() {
     let key = vm(SUBJECT, "key-1");
-    let key_id = key.id.clone();
+    let key_id = key.id().clone();
     let doc = DidDocumentBuilder::new(SUBJECT)
         .add_verification_method(key)
         .authentication(vec![key_id])
@@ -103,7 +103,7 @@ fn builder_with_service_builds() {
 #[test]
 fn builder_threads_all_5_relations() {
     let key = vm(SUBJECT, "key-1");
-    let key_id = key.id.clone();
+    let key_id = key.id().clone();
     let doc = DidDocumentBuilder::new(SUBJECT)
         .add_verification_method(key)
         .authentication(vec![key_id.clone()])

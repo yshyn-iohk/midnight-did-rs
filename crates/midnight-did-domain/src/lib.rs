@@ -59,8 +59,8 @@ pub use did_document::{
     CurveType, DidDocument, DidDocumentMetadata, DidKeyId, DidResolutionErrorCode, DidResolutionResult, DidString,
     DidUrl, KeyType, KnownDidMediaType, KnownDidResolutionErrorCode, PublicKeyJwk, RelativeUrl, Service,
     ServiceEndpoint, ValidationError, ValidationIssue, VerificationMethod, VerificationMethodRelation,
-    VerificationMethodType, create_did_document, create_service, create_verification_method, parse_did,
-    parse_did_document, parse_did_key_id, parse_did_url, parse_service, parse_verification_method,
+    VerificationMethodType, create_did_document, parse_did, parse_did_document, parse_did_key_id, parse_did_url,
+    parse_service, parse_verification_method,
 };
 pub use did_registrar::DidRegistrar;
 pub use did_resolver::MidnightDidResolver;

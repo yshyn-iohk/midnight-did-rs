@@ -109,10 +109,10 @@ pub fn sample_ledger_verification_method() -> LedgerVerificationMethod {
         id: VM_FRAGMENT.to_string(),
         typ: VerificationMethodType::JsonWebKey,
         public_key_jwk: LedgerPublicKeyJwk {
-            kty: jwk.kty,
-            crv: jwk.crv,
-            x: jwk.x,
-            y: jwk.y.unwrap_or_default(),
+            kty: jwk.kty(),
+            crv: jwk.crv(),
+            x: jwk.x().to_string(),
+            y: jwk.y().map(str::to_string).unwrap_or_default(),
         },
     }
 }

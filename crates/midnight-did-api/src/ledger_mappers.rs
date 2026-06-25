@@ -55,40 +55,41 @@ pub struct SchnorrJubjubVerificationMethod {
 /// Map a domain [`PublicKeyJwk`] into the ledger-wire shape, validating both
 /// coordinate length and the Midnight key-profile rules.
 pub fn public_key_jwk_to_ledger(jwk: &PublicKeyJwk) -> Result<LedgerPublicKeyJwk, ApiError> {
-    if jwk.extensions.contains_key("d") {
+    if jwk.extensions().contains_key("d") {
         return Err(ApiError::invalid_argument(
             "publicKeyJwk must not include private key material",
         ));
     }
     let x_len =
-        public_key_jwk_coordinate_byte_length(jwk.kty, jwk.crv, PublicKeyJwkCoordinate::X).ok_or_else(|| {
+        public_key_jwk_coordinate_byte_length(jwk.kty(), jwk.crv(), PublicKeyJwkCoordinate::X).ok_or_else(|| {
             ApiError::invalid_argument(format!(
                 "Unsupported publicKeyJwk.x profile {:?}/{:?}",
-                jwk.kty, jwk.crv
+                jwk.kty(),
+                jwk.crv()
             ))
         })?;
-    decode_base64url_bytes(&jwk.x, x_len, "publicKeyJwk.x")?;
+    decode_base64url_bytes(jwk.x(), x_len, "publicKeyJwk.x")?;
 
-    let y_value = match &jwk.y {
+    let y_value = match jwk.y() {
         Some(y) => {
-            let y_len = public_key_jwk_coordinate_byte_length(jwk.kty, jwk.crv, PublicKeyJwkCoordinate::Y).ok_or_else(
-                || {
+            let y_len = public_key_jwk_coordinate_byte_length(jwk.kty(), jwk.crv(), PublicKeyJwkCoordinate::Y)
+                .ok_or_else(|| {
                     ApiError::invalid_argument(format!(
                         "Unsupported publicKeyJwk.y profile {:?}/{:?}",
-                        jwk.kty, jwk.crv
+                        jwk.kty(),
+                        jwk.crv()
                     ))
-                },
-            )?;
+                })?;
             decode_base64url_bytes(y, y_len, "publicKeyJwk.y")?;
-            y.clone()
+            y.to_owned()
         }
         None => String::new(),
     };
 
     Ok(LedgerPublicKeyJwk {
-        kty: jwk.kty,
-        crv: jwk.crv,
-        x: jwk.x.clone(),
+        kty: jwk.kty(),
+        crv: jwk.crv(),
+        x: jwk.x().to_owned(),
         y: y_value,
     })
 }
@@ -102,10 +103,10 @@ pub fn public_key_jwk_to_ledger(jwk: &PublicKeyJwk) -> Result<LedgerPublicKeyJwk
 ///   dedicated Schnorr-Jubjub flow. EC keys require a y coordinate.
 /// - All other (kty, crv) combinations are rejected.
 pub fn assert_midnight_key_profile(jwk: &PublicKeyJwk) -> Result<(), ApiError> {
-    match jwk.kty {
+    match jwk.kty() {
         KeyType::OKP => {
             let allowed = matches!(
-                jwk.crv,
+                jwk.crv(),
                 CurveType::Ed25519 | CurveType::X25519 | CurveType::BLS12381G1 | CurveType::BLS12381G2
             );
             if !allowed {
@@ -113,23 +114,23 @@ pub fn assert_midnight_key_profile(jwk: &PublicKeyJwk) -> Result<(), ApiError> {
                     "OKP keys must use Ed25519, X25519, BLS12381G1, or BLS12381G2",
                 ));
             }
-            if jwk.y.is_some() {
+            if jwk.y().is_some() {
                 return Err(ApiError::invalid_argument("OKP keys must not include a y coordinate"));
             }
             Ok(())
         }
         KeyType::EC => {
-            if matches!(jwk.crv, CurveType::Jubjub) {
+            if matches!(jwk.crv(), CurveType::Jubjub) {
                 return Err(ApiError::invalid_argument(
                     "Jubjub keys must use addSchnorrJubjubVerificationMethod",
                 ));
             }
-            if !matches!(jwk.crv, CurveType::P256 | CurveType::Secp256k1) {
+            if !matches!(jwk.crv(), CurveType::P256 | CurveType::Secp256k1) {
                 return Err(ApiError::invalid_argument(
                     "EC keys must use P-256 or secp256k1; use SchnorrJubjub methods for Jubjub",
                 ));
             }
-            if jwk.y.is_none() {
+            if jwk.y().is_none() {
                 return Err(ApiError::invalid_argument("EC keys must include a y coordinate"));
             }
             Ok(())
@@ -147,19 +148,19 @@ pub fn verification_method_to_ledger<C: DidContract + ?Sized>(
     did_contract: &C,
     method: &VerificationMethod,
 ) -> Result<LedgerVerificationMethod, ApiError> {
-    if !matches!(method.type_, VerificationMethodType::JsonWebKey) {
+    if !matches!(method.type_(), VerificationMethodType::JsonWebKey) {
         return Err(ApiError::invalid_argument("verificationMethod.type must be JsonWebKey"));
     }
-    assert_midnight_key_profile(&method.public_key_jwk)?;
+    assert_midnight_key_profile(method.public_key_jwk())?;
     let subject = crate::subject::get_did_subject(did_contract)?;
-    if method.controller.0 != subject {
+    if method.controller().as_str() != subject {
         return Err(ApiError::Controller(crate::error::ControllerError::SubjectMismatch { expected: subject }));
     }
-    let id = normalize_bound_fragment_id_for(did_contract, &method.id.0, BoundIdField::VerificationMethodId)?;
+    let id = normalize_bound_fragment_id_for(did_contract, method.id().as_str(), BoundIdField::VerificationMethodId)?;
     Ok(LedgerVerificationMethod {
         id,
-        typ: method.type_,
-        public_key_jwk: public_key_jwk_to_ledger(&method.public_key_jwk)?,
+        typ: method.type_(),
+        public_key_jwk: public_key_jwk_to_ledger(method.public_key_jwk())?,
     })
 }
 
@@ -186,9 +187,9 @@ pub fn service_to_ledger<C: DidContract + ?Sized>(
     did_contract: &C,
     service: &Service,
 ) -> Result<LedgerService, ApiError> {
-    let endpoint = service_endpoint_to_ledger(service.service_endpoint.clone());
-    let typ = service_type_to_ledger(&service.type_)?;
-    let id = normalize_bound_fragment_id_for(did_contract, &service.id, BoundIdField::ServiceId)?;
+    let endpoint = service_endpoint_to_ledger(service.service_endpoint().clone());
+    let typ = service_type_to_ledger(service.type_())?;
+    let id = normalize_bound_fragment_id_for(did_contract, service.id(), BoundIdField::ServiceId)?;
     Ok(LedgerService {
         id,
         typ,
@@ -234,7 +235,7 @@ mod tests {
     use super::*;
     use crate::contract::mock::RecordingContract;
     use midnight_did_domain::did_document::{
-        NewPublicKeyJwk, NewVerificationMethod, ServiceEndpoint, ServiceType,
+        NewPublicKeyJwk, NewService, NewVerificationMethod, ServiceEndpoint, ServiceType,
     };
     use midnight_did_method::midnight_did::MidnightNetwork;
     use std::collections::BTreeMap;
@@ -323,11 +324,12 @@ mod tests {
     #[test]
     fn maps_service() {
         let contract = RecordingContract::new(ADDR, MidnightNetwork::Testnet);
-        let svc = Service {
+        let svc = Service::new(midnight_did_domain::did_document::NewService {
             id: "svc-1".into(),
             type_: ServiceType::One("LinkedDomains".into()),
             service_endpoint: ServiceEndpoint::Uri("https://example.com".into()),
-        };
+        })
+        .expect("sample Service is valid");
         let ledger = service_to_ledger(&contract, &svc).expect("map ok");
         assert_eq!(ledger.id, "#svc-1");
         assert_eq!(ledger.typ, "LinkedDomains");

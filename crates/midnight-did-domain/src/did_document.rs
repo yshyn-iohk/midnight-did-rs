@@ -97,22 +97,22 @@ impl ValidationError {
 /// `did:method:specific-id` URL string (may include path/query/fragment).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct DidUrl(pub String);
+pub struct DidUrl(String);
 
 /// Relative URL reference (no scheme, no leading `//`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct RelativeUrl(pub String);
+pub struct RelativeUrl(String);
 
 /// Bare DID string with no path/query/fragment.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct DidString(pub String);
+pub struct DidString(String);
 
 /// DID Key ID — either a full DID URL `did:...#frag` or a relative `#frag` reference.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct DidKeyId(pub String);
+pub struct DidKeyId(String);
 
 const URI_SCHEME_PREFIX_CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
 const URI_SCHEME_INNER_CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+.-";
@@ -210,6 +210,16 @@ impl DidUrl {
         }
         Ok(Self(s))
     }
+
+    /// Borrow the URL as a string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Consume self and return the inner String.
+    pub fn into_string(self) -> String {
+        self.0
+    }
 }
 
 impl RelativeUrl {
@@ -222,6 +232,16 @@ impl RelativeUrl {
             )]));
         }
         Ok(Self(s))
+    }
+
+    /// Borrow the URL as a string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Consume self and return the inner String.
+    pub fn into_string(self) -> String {
+        self.0
     }
 }
 
@@ -236,6 +256,16 @@ impl DidString {
         }
         Ok(Self(s))
     }
+
+    /// Borrow the DID as a string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Consume self and return the inner String.
+    pub fn into_string(self) -> String {
+        self.0
+    }
 }
 
 impl DidKeyId {
@@ -248,6 +278,16 @@ impl DidKeyId {
             )]));
         }
         Ok(Self(s))
+    }
+
+    /// Borrow the key id as a string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Consume self and return the inner String.
+    pub fn into_string(self) -> String {
+        self.0
     }
 }
 
@@ -356,28 +396,26 @@ pub fn public_key_jwk_coordinate_byte_length(
 
 /// Public-key JWK (DID-Core: no private `d` material allowed).
 ///
-/// R1 step 4a: deserialisation now runs the same validation as
+/// R1 step 4a: deserialisation runs the same validation as
 /// [`Self::new`] via `#[serde(try_from = "PublicKeyJwkWire")]` —
 /// JSON-loaded values cannot be in an invalid state. The
 /// `PublicKeyJwkWire` shim is a structurally-identical helper used
 /// only for serde wire format; its [`TryFrom`] impl delegates to
 /// `Self::new`.
+///
+/// R1 step 4c: fields are private; use [`Self::new`] to construct
+/// and the [`Self::kty`] / [`Self::crv`] / [`Self::x`] / [`Self::y`]
+/// / [`Self::extensions`] accessors to read.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(try_from = "PublicKeyJwkWire")]
 pub struct PublicKeyJwk {
-    /// Key type.
-    pub kty: KeyType,
-    /// Curve.
-    pub crv: CurveType,
-    /// X coordinate (base64url).
-    pub x: String,
-    /// Optional Y coordinate (base64url).
+    kty: KeyType,
+    crv: CurveType,
+    x: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub y: Option<String>,
-    /// Catch-all for additional public-only JWK members so we don't drop
-    /// resolver-specific keywords on the floor.
+    y: Option<String>,
     #[serde(flatten)]
-    pub extensions: BTreeMap<String, JsonValue>,
+    extensions: BTreeMap<String, JsonValue>,
 }
 
 /// Wire-format shim for [`PublicKeyJwk`] deserialisation. The shim
@@ -450,6 +488,32 @@ impl PublicKeyJwk {
         };
         jwk.validate()?;
         Ok(jwk)
+    }
+
+    /// Borrow the `kty` (key type).
+    pub fn kty(&self) -> KeyType {
+        self.kty
+    }
+
+    /// Borrow the `crv` (curve).
+    pub fn crv(&self) -> CurveType {
+        self.crv
+    }
+
+    /// Borrow the base64url-encoded `x` coordinate.
+    pub fn x(&self) -> &str {
+        &self.x
+    }
+
+    /// Borrow the optional base64url-encoded `y` coordinate.
+    pub fn y(&self) -> Option<&str> {
+        self.y.as_deref()
+    }
+
+    /// Borrow the catch-all extension map (additional public JWK
+    /// keywords carried alongside the canonical fields).
+    pub fn extensions(&self) -> &BTreeMap<String, JsonValue> {
+        &self.extensions
     }
 
     /// Run all JWK validation checks. Returns the structured list of issues.
@@ -531,28 +595,28 @@ impl PublicKeyJwk {
 // ---------------------------------------------------------------------------
 
 /// Verification method entry. Matches the TS `VerificationMethod` shape.
+///
+/// R1 step 4c: fields are private; use [`Self::new`] to construct and
+/// the [`Self::id`] / [`Self::type_`] / [`Self::controller`] /
+/// [`Self::public_key_jwk`] accessors to read.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VerificationMethod {
-    /// Key id (DID URL with fragment or relative `#fragment`).
-    pub id: DidKeyId,
-    /// Method type keyword.
+    id: DidKeyId,
     #[serde(rename = "type")]
-    pub type_: VerificationMethodType,
-    /// Controller DID.
-    pub controller: DidString,
-    /// Inline JWK with the public key material.
+    type_: VerificationMethodType,
+    controller: DidString,
     #[serde(rename = "publicKeyJwk")]
-    pub public_key_jwk: PublicKeyJwk,
+    public_key_jwk: PublicKeyJwk,
 }
 
 /// Parameters for [`VerificationMethod::new`]. Mirrors the field
 /// shape of [`VerificationMethod`] but carries no validation —
 /// `::new` is the gate.
 ///
-/// R1 step 4a: separates "raw input" from "validated value". Same
-/// inputs as the legacy [`CreateVerificationMethodParams`] but with
-/// a typed [`PublicKeyJwk`] (the legacy params accepted the same
-/// type — no behavioural change).
+/// R1 step 4a: separates "raw input" from "validated value". The
+/// legacy `CreateVerificationMethodParams` helper this replaced was
+/// retired in v0.3.0; field shape is preserved here, with
+/// `public_key_jwk` already a typed `PublicKeyJwk`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewVerificationMethod {
     /// Key id (DID URL with fragment).
@@ -570,8 +634,8 @@ impl VerificationMethod {
     /// W3C-compliant validation (id format, controller DID format,
     /// embedded JWK validity) at the gate.
     ///
-    /// R1 step 4a: this is the preferred constructor. The legacy
-    /// [`create_verification_method`] free function delegates here.
+    /// R1 step 4a/4c: this is the only constructor. The legacy
+    /// `create_verification_method` free function was retired in v0.3.0.
     pub fn new(input: NewVerificationMethod) -> Result<Self, ValidationError> {
         let vm = Self {
             id: DidKeyId::parse(input.id)?,
@@ -583,15 +647,35 @@ impl VerificationMethod {
         Ok(vm)
     }
 
+    /// Borrow the verification-method id.
+    pub fn id(&self) -> &DidKeyId {
+        &self.id
+    }
+
+    /// Borrow the method type keyword.
+    pub fn type_(&self) -> VerificationMethodType {
+        self.type_
+    }
+
+    /// Borrow the controller DID.
+    pub fn controller(&self) -> &DidString {
+        &self.controller
+    }
+
+    /// Borrow the embedded public-key JWK.
+    pub fn public_key_jwk(&self) -> &PublicKeyJwk {
+        &self.public_key_jwk
+    }
+
     /// Validate this method's id, controller, and embedded JWK.
     pub fn validate(&self) -> Result<(), ValidationError> {
         let mut issues = Vec::new();
-        if !is_did_key_id(&self.id.0) {
+        if !is_did_key_id(self.id.as_str()) {
             issues.push(ValidationIssue::new(
                 "Invalid DID Key ID format: invalid or missing fragment",
             ));
         }
-        if !is_did_string(&self.controller.0) {
+        if !is_did_string(self.controller.as_str()) {
             issues.push(ValidationIssue::new("Invalid DID format"));
         }
         issues.extend(self.public_key_jwk.collect_issues());
@@ -636,23 +720,25 @@ pub enum ServiceType {
 }
 
 /// Service entry on a DID Document.
+///
+/// R1 step 4c: fields are private; use [`Self::new`] to construct and
+/// the [`Self::id`] / [`Self::type_`] / [`Self::service_endpoint`]
+/// accessors to read.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Service {
-    /// Either a DID URL or a relative reference.
-    pub id: String,
-    /// Service type keyword(s).
+    id: String,
     #[serde(rename = "type")]
-    pub type_: ServiceType,
-    /// Endpoint(s) — URI, object, or array.
+    type_: ServiceType,
     #[serde(rename = "serviceEndpoint")]
-    pub service_endpoint: ServiceEndpoint,
+    service_endpoint: ServiceEndpoint,
 }
 
 /// Parameters for [`Service::new`]. Mirrors the field shape of
 /// [`Service`] but carries no validation — `::new` is the gate.
 ///
-/// R1 step 4a: separates "raw input" from "validated value". Same
-/// inputs as the legacy [`CreateServiceParams`].
+/// R1 step 4a: separates "raw input" from "validated value". The
+/// legacy `CreateServiceParams` helper this replaced was retired in
+/// v0.3.0.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewService {
     /// Either a DID URL or a relative reference (`#fragment`).
@@ -669,8 +755,8 @@ impl Service {
     /// type is non-empty, endpoint is well-formed) at the gate and
     /// normalising the endpoint shape as part of construction.
     ///
-    /// R1 step 4a: this is the preferred constructor. The legacy
-    /// [`create_service`] free function delegates here.
+    /// R1 step 4a/4c: this is the only constructor. The legacy
+    /// `create_service` free function was retired in v0.3.0.
     pub fn new(input: NewService) -> Result<Self, ValidationError> {
         let mut svc = Self {
             id: input.id,
@@ -680,6 +766,21 @@ impl Service {
         svc.validate()?;
         svc.service_endpoint = normalize_service_endpoint(svc.service_endpoint);
         Ok(svc)
+    }
+
+    /// Borrow the service id.
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// Borrow the service type keyword(s).
+    pub fn type_(&self) -> &ServiceType {
+        &self.type_
+    }
+
+    /// Borrow the service endpoint(s).
+    pub fn service_endpoint(&self) -> &ServiceEndpoint {
+        &self.service_endpoint
     }
 
     /// Run id and serviceEndpoint structural checks. Endpoint normalization
@@ -823,7 +924,7 @@ impl DidDocument {
         let empty: Vec<VerificationMethod> = Vec::new();
         let vms: &[VerificationMethod] = normalized.verification_method.as_deref().unwrap_or(&empty);
         let mut seen_vm_ids: HashMap<String, usize> = HashMap::new();
-        let did = &normalized.id.0;
+        let did = normalized.id.as_str();
         let canonicalize = |value: &str| -> String {
             if value.starts_with("did:") {
                 value.to_owned()
@@ -834,7 +935,7 @@ impl DidDocument {
             }
         };
         for (index, vm) in vms.iter().enumerate() {
-            let canonical = canonicalize(&vm.id.0);
+            let canonical = canonicalize(vm.id.as_str());
             if let std::collections::hash_map::Entry::Vacant(entry) = seen_vm_ids.entry(canonical) {
                 entry.insert(index);
             } else {
@@ -849,7 +950,7 @@ impl DidDocument {
             if let Some(values) = values {
                 let mut seen = HashSet::new();
                 for (index, value) in values.iter().enumerate() {
-                    let canonical = canonicalize(&value.0);
+                    let canonical = canonicalize(value.as_str());
                     if !seen.insert(canonical.clone()) {
                         issues.push(ValidationIssue::at(
                             format!("{name} must not contain duplicate entries"),
@@ -1137,60 +1238,12 @@ pub fn parse_service(value: JsonValue) -> Result<Service, ValidationError> {
     Ok(svc)
 }
 
-/// Parameters accepted by [`create_verification_method`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CreateVerificationMethodParams {
-    /// Key id.
-    pub id: String,
-    /// Method type keyword.
-    pub type_: VerificationMethodType,
-    /// Controller DID.
-    pub controller: String,
-    /// Embedded JWK.
-    pub public_key_jwk: PublicKeyJwk,
-}
-
-/// Build a verification method, running the same validation as the TS helper.
-///
-/// R1 step 4a deprecation note: prefer [`VerificationMethod::new`]
-/// with a [`NewVerificationMethod`] input — same behaviour, more
-/// idiomatic shape. This free function delegates there and will be
-/// retired in R1 step 4c.
-pub fn create_verification_method(
-    params: CreateVerificationMethodParams,
-) -> Result<VerificationMethod, ValidationError> {
-    VerificationMethod::new(NewVerificationMethod {
-        id: params.id,
-        type_: params.type_,
-        controller: params.controller,
-        public_key_jwk: params.public_key_jwk,
-    })
-}
-
-/// Parameters accepted by [`create_service`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CreateServiceParams {
-    /// Service id.
-    pub id: String,
-    /// Service type keyword(s).
-    pub type_: ServiceType,
-    /// Service endpoint(s).
-    pub service_endpoint: ServiceEndpoint,
-}
-
-/// Build a service, validating and normalizing the endpoint.
-///
-/// R1 step 4a deprecation note: prefer [`Service::new`] with a
-/// [`NewService`] input — same behaviour, more idiomatic shape.
-/// This free function delegates there and will be retired in R1
-/// step 4c.
-pub fn create_service(params: CreateServiceParams) -> Result<Service, ValidationError> {
-    Service::new(NewService {
-        id: params.id,
-        type_: params.type_,
-        service_endpoint: params.service_endpoint,
-    })
-}
+// R1 step 4c: the legacy `create_verification_method` /
+// `create_service` free functions and their `Create*Params` structs
+// have been retired. Use [`VerificationMethod::new`] +
+// [`NewVerificationMethod`] and [`Service::new`] + [`NewService`]
+// instead. (`create_did_document` is still provided alongside the
+// builder.)
 
 /// Parameters accepted by [`create_did_document`].
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -1367,10 +1420,10 @@ impl DidDocumentBuilder {
         // Duplicate verification-method ids.
         let mut vm_id_set = std::collections::HashSet::new();
         for vm in &self.verification_method {
-            if !vm_id_set.insert(vm.id.0.clone()) {
+            if !vm_id_set.insert(vm.id.as_str().to_owned()) {
                 issues.push(ValidationIssue::new(format!(
                     "duplicate verificationMethod id: {}",
-                    vm.id.0
+                    vm.id.as_str()
                 )));
             }
         }
@@ -1395,10 +1448,10 @@ impl DidDocumentBuilder {
             ("capabilityDelegation", &self.capability_delegation),
         ] {
             for id in ids {
-                if !vm_id_set.contains(&id.0) {
+                if !vm_id_set.contains(id.as_str()) {
                     issues.push(ValidationIssue::new(format!(
                         "{kind} references unknown verificationMethod id: {}",
-                        id.0
+                        id.as_str()
                     )));
                 }
             }

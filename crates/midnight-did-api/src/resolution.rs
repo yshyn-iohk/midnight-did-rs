@@ -471,7 +471,7 @@ mod tests {
     fn empty_ledger_yields_minimal_document() {
         let state = DidLedgerSnapshot::default();
         let doc = ledger_state_to_did_document(&state, MidnightNetwork::Testnet, ADDR).unwrap();
-        assert_eq!(doc.id.0, format!("did:midnight:testnet:{ADDR}"));
+        assert_eq!(doc.id.as_str(), format!("did:midnight:testnet:{ADDR}"));
         assert!(doc.verification_method.is_none());
         assert!(doc.authentication.is_none());
         assert!(doc.service.is_none());
@@ -486,7 +486,7 @@ mod tests {
         let doc = ledger_state_to_did_document(&state, MidnightNetwork::Testnet, ADDR).unwrap();
         let vms = doc.verification_method.unwrap();
         assert_eq!(vms.len(), 1);
-        assert!(vms[0].id.0.ends_with("#key-1"));
+        assert!(vms[0].id().as_str().ends_with("#key-1"));
     }
 
     #[test]
@@ -510,7 +510,7 @@ mod tests {
         );
         let doc = ledger_state_to_did_document(&state, MidnightNetwork::Testnet, ADDR).unwrap();
         let svc = &doc.service.unwrap()[0];
-        assert!(matches!(&svc.service_endpoint, ServiceEndpoint::Uri(u) if u == "https://example.com"));
+        assert!(matches!(svc.service_endpoint(), ServiceEndpoint::Uri(u) if u == "https://example.com"));
     }
 
     #[test]

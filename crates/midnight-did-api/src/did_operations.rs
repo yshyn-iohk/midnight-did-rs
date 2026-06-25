@@ -178,7 +178,7 @@ mod tests {
     use super::*;
     use crate::contract::mock::{RecordedCall, RecordingContract};
     use crate::private_state::{InMemoryPrivateStateStore, PrivateStateSlot, restore_private_state};
-    use midnight_did_domain::did_document::{Service, ServiceEndpoint, ServiceType};
+    use midnight_did_domain::did_document::{NewService, Service, ServiceEndpoint, ServiceType};
     use midnight_did_method::midnight_did::MidnightNetwork;
 
     const ADDR: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
@@ -198,11 +198,14 @@ mod tests {
         let contract = RecordingContract::new(ADDR, MidnightNetwork::Testnet);
         let patch = DidDocumentPatch {
             also_known_as_added: vec!["https://example.com/a".into()],
-            services_added: vec![Service {
-                id: "svc-1".into(),
-                type_: ServiceType::One("LinkedDomains".into()),
-                service_endpoint: ServiceEndpoint::Uri("https://example.com".into()),
-            }],
+            services_added: vec![
+                Service::new(NewService {
+                    id: "svc-1".into(),
+                    type_: ServiceType::One("LinkedDomains".into()),
+                    service_endpoint: ServiceEndpoint::Uri("https://example.com".into()),
+                })
+                .expect("valid service"),
+            ],
             ..DidDocumentPatch::default()
         };
         apply_patch(&contract, &patch).await.unwrap();

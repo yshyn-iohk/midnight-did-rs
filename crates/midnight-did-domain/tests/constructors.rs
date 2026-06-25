@@ -46,8 +46,8 @@ fn valid_ed25519_jwk() -> NewPublicKeyJwk {
 #[test]
 fn public_key_jwk_new_accepts_valid_ed25519() {
     let jwk = PublicKeyJwk::new(valid_ed25519_jwk()).expect("valid OKP/Ed25519 JWK");
-    assert_eq!(jwk.kty, KeyType::OKP);
-    assert_eq!(jwk.crv, CurveType::Ed25519);
+    assert_eq!(jwk.kty(), KeyType::OKP);
+    assert_eq!(jwk.crv(), CurveType::Ed25519);
 }
 
 #[test]
@@ -127,7 +127,7 @@ fn public_key_jwk_deserialize_accepts_valid() {
         "x": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"
     });
     let jwk: PublicKeyJwk = serde_json::from_value(good_json).expect("valid");
-    assert_eq!(jwk.kty, KeyType::OKP);
+    assert_eq!(jwk.kty(), KeyType::OKP);
 }
 
 // ---- VerificationMethod -------------------------------------------
@@ -141,7 +141,7 @@ fn verification_method_new_accepts_valid_input() {
         public_key_jwk: PublicKeyJwk::new(valid_ed25519_jwk()).unwrap(),
     })
     .expect("valid");
-    assert_eq!(vm.id.0, "did:midnight:testnet:abc#key-1");
+    assert_eq!(vm.id().as_str(), "did:midnight:testnet:abc#key-1");
 }
 
 #[test]
@@ -179,7 +179,7 @@ fn service_new_accepts_valid_did_url_id() {
         service_endpoint: ServiceEndpoint::Uri("https://example.com".to_string()),
     })
     .expect("valid");
-    assert_eq!(svc.id, "did:midnight:testnet:abc#linked-domain");
+    assert_eq!(svc.id(), "did:midnight:testnet:abc#linked-domain");
 }
 
 #[test]
@@ -190,7 +190,7 @@ fn service_new_accepts_relative_reference_id() {
         service_endpoint: ServiceEndpoint::Uri("https://example.com".to_string()),
     })
     .expect("relative refs valid per W3C DID Core");
-    assert_eq!(svc.id, "#linked-domain");
+    assert_eq!(svc.id(), "#linked-domain");
 }
 
 #[test]
@@ -226,36 +226,8 @@ fn service_new_rejects_invalid_id_format() {
     assert!(format!("{err}").contains("DID URL") || format!("{err}").contains("relative reference"));
 }
 
-// ---- Pre-existing factories still work ----------------------------
-//
-// Step 4a is additive — the existing `create_verification_method`
-// / `create_service` factories must still work identically. These
-// tests pin that, so the migration in step 4b/4c doesn't silently
-// regress callers that haven't switched yet.
-
-#[test]
-fn create_verification_method_factory_still_works() {
-    use midnight_did_domain::did_document::{CreateVerificationMethodParams, create_verification_method};
-
-    let vm = create_verification_method(CreateVerificationMethodParams {
-        id: "did:midnight:testnet:abc#key-1".to_string(),
-        type_: VerificationMethodType::JsonWebKey,
-        controller: "did:midnight:testnet:abc".to_string(),
-        public_key_jwk: PublicKeyJwk::new(valid_ed25519_jwk()).unwrap(),
-    })
-    .expect("legacy factory still works");
-    assert_eq!(vm.id.0, "did:midnight:testnet:abc#key-1");
-}
-
-#[test]
-fn create_service_factory_still_works() {
-    use midnight_did_domain::did_document::{CreateServiceParams, create_service};
-
-    let svc = create_service(CreateServiceParams {
-        id: "#x".to_string(),
-        type_: ServiceType::One("LinkedDomains".to_string()),
-        service_endpoint: ServiceEndpoint::Uri("https://example.com".to_string()),
-    })
-    .expect("legacy factory still works");
-    assert_eq!(svc.id, "#x");
-}
+// R1 step 4c: the legacy `create_verification_method` /
+// `create_service` factories have been retired. Their behaviour is
+// covered by the `VerificationMethod::new` / `Service::new` happy-path
+// tests above; this section formerly held redundant pinning tests for
+// the deprecated free-function path.

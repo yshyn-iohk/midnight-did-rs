@@ -198,7 +198,7 @@ impl OffchainKeyKind {
 pub fn key_kind_from_jwk(jwk: &PublicKeyJwk) -> Result<OffchainKeyKind, OffchainError> {
     use CurveType::*;
     use KeyType::*;
-    match (jwk.kty, jwk.crv) {
+    match (jwk.kty(), jwk.crv()) {
         (EC, Jubjub) => Ok(OffchainKeyKind::Jubjub),
         (OKP, Ed25519) => Ok(OffchainKeyKind::Ed25519),
         (OKP, X25519) => Ok(OffchainKeyKind::X25519),
@@ -207,8 +207,8 @@ pub fn key_kind_from_jwk(jwk: &PublicKeyJwk) -> Result<OffchainKeyKind, Offchain
         (OKP, BLS12381G1) => Ok(OffchainKeyKind::BLS12381G1),
         (OKP, BLS12381G2) => Ok(OffchainKeyKind::BLS12381G2),
         _ => Err(OffchainError::UnsupportedKeyType {
-            kty: format!("{:?}", jwk.kty),
-            crv: format!("{:?}", jwk.crv),
+            kty: format!("{:?}", jwk.kty()),
+            crv: format!("{:?}", jwk.crv()),
         }),
     }
 }
@@ -867,9 +867,9 @@ mod tests {
         .unwrap();
         let kind = key_kind_from_jwk(&jwk).unwrap();
         assert_eq!(kind, OffchainKeyKind::Ed25519);
-        let back = jwk_from_key_kind(kind, &jwk.x, "").unwrap();
-        assert_eq!(back.kty, jwk.kty);
-        assert_eq!(back.crv, jwk.crv);
+        let back = jwk_from_key_kind(kind, jwk.x(), "").unwrap();
+        assert_eq!(back.kty(), jwk.kty());
+        assert_eq!(back.crv(), jwk.crv());
     }
 
     #[test]

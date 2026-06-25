@@ -32,7 +32,7 @@ use midnight_did_api::{
 use midnight_did_domain::{
     crypto_codecs::encode_base64url,
     did_document::{
-        CurveType, DidKeyId, DidString, KeyType, NewPublicKeyJwk, PublicKeyJwk, VerificationMethod,
+        CurveType, KeyType, NewPublicKeyJwk, NewVerificationMethod, PublicKeyJwk, VerificationMethod,
         VerificationMethodRelation, VerificationMethodType,
     },
 };
@@ -64,12 +64,13 @@ fn bls_g1_b64url() -> String {
 }
 
 fn vm_with_jwk(id: &str, jwk: PublicKeyJwk) -> VerificationMethod {
-    VerificationMethod {
-        id: DidKeyId(format!("{}#{id}", did_subject())),
+    VerificationMethod::new(NewVerificationMethod {
+        id: format!("{}#{id}", did_subject()),
         type_: VerificationMethodType::JsonWebKey,
-        controller: DidString(did_subject()),
+        controller: did_subject(),
         public_key_jwk: jwk,
-    }
+    })
+    .expect("valid verification method")
 }
 
 // ---------------------------------------------------------------------------
@@ -80,13 +81,14 @@ fn normalizes_okp_keys_to_ledger_y_sentinel() {
     let x = zeros32_b64url();
     let vm = vm_with_jwk(
         "key-ed25519",
-        PublicKeyJwk {
+        PublicKeyJwk::new(NewPublicKeyJwk {
             kty: KeyType::OKP,
             crv: CurveType::Ed25519,
             x: x.clone(),
             y: None,
             extensions: BTreeMap::new(),
-        },
+        })
+        .expect("valid jwk"),
     );
     let ledger = verification_method_to_ledger(&contract(), &vm).expect("map ok");
     assert_eq!(ledger.public_key_jwk.kty, KeyType::OKP);
@@ -104,13 +106,14 @@ fn normalizes_bls12381_g1_okp_keys_to_ledger_y_sentinel() {
     let x = bls_g1_b64url();
     let vm = vm_with_jwk(
         "key-bls12381-g1",
-        PublicKeyJwk {
+        PublicKeyJwk::new(NewPublicKeyJwk {
             kty: KeyType::OKP,
             crv: CurveType::BLS12381G1,
             x: x.clone(),
             y: None,
             extensions: BTreeMap::new(),
-        },
+        })
+        .expect("valid jwk"),
     );
     let ledger = verification_method_to_ledger(&contract(), &vm).expect("map ok");
     assert_eq!(ledger.public_key_jwk.kty, KeyType::OKP);
@@ -197,13 +200,14 @@ fn publickeyjwk_new_rejects_private_key_material() {
 // ---------------------------------------------------------------------------
 #[test]
 fn public_key_jwk_to_ledger_okp_y_is_empty() {
-    let jwk = PublicKeyJwk {
+    let jwk = PublicKeyJwk::new(NewPublicKeyJwk {
         kty: KeyType::OKP,
         crv: CurveType::Ed25519,
         x: zeros32_b64url(),
         y: None,
         extensions: BTreeMap::new(),
-    };
+    })
+    .expect("valid jwk");
     let ledger = public_key_jwk_to_ledger(&jwk).unwrap();
     assert_eq!(ledger.y, "");
 }

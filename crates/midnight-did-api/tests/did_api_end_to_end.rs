@@ -248,7 +248,7 @@ async fn create_did_seeds_active_slot_and_resolves_empty_document() {
     assert!(resolved.did_document.service.is_none());
     assert!(resolved.did_document.also_known_as.is_none());
     assert_eq!(
-        resolved.did_document.id.0,
+        resolved.did_document.id.as_str(),
         did_subject(),
         "DID Document id must equal the DID subject"
     );
@@ -305,7 +305,7 @@ async fn resolved_document_carries_w3c_contexts() {
 async fn resolved_document_id_uses_canonical_midnight_did_format() {
     let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Testnet, initial_ledger());
     let resolved = resolve(&contract).await.unwrap().expect("resolves");
-    assert_eq!(resolved.did_document.id.0, format!("did:midnight:testnet:{ADDR}"));
+    assert_eq!(resolved.did_document.id.as_str(), format!("did:midnight:testnet:{ADDR}"));
 }
 
 /// "should surface DID Document metadata with version and activation state"
