@@ -1,17 +1,28 @@
 //! I/O substrate abstraction for the Midnight DID contract.
 //!
-//! The [`Backend`] trait is the two-method seam between
-//! [`crate::contract`]'s circuit-call surface and whichever stack is
+//! The [`Backend`] trait is the three-method seam between
+//! [`crate::Contract<B>`]'s circuit-call surface and whichever stack is
 //! actually shuttling bytes to a Midnight node. Production code wraps a
 //! wallet SDK + proof server + indexer in [`LiveBackend`]; api-layer
 //! tests use [`RecordingBackend`] (in-memory, records every submit);
 //! the resolver consumer uses [`ResolverBackend`] (read-only snapshot).
 //!
-//! See `doc/specs/2026-06-24-r2-contract-abstraction-design.md` for the
-//! full R2 design and the rationale for collapsing `DidContract` into a
-//! concrete `Contract<B>` parameterised on `B: Backend`. This module
-//! lands the trait + three impls in R2-1; the api-layer migration is
-//! R2-2; deletion of the legacy `DidContract` trait is R2-3.
+//! ## v0.4.0 — Path 2 typed-envelope strategy
+//!
+//! R2-2 (ADR 0008) lands the typed [`crate::contract_call::DidContractCall`]
+//! envelope on top of [`Backend::submit_tx`]: `Contract<B>` serialises each
+//! circuit invocation into [`BuiltTx::bytes`] via
+//! [`crate::contract_call::DidContractCall::encode`], and the recording
+//! backend decodes the envelope back into typed call records via
+//! [`Self::recorded_calls`]. [`Backend::read_snapshot`] is a parallel read
+//! path that bypasses the submit/encode round-trip and hands callers a
+//! plain-data [`DidLedgerSnapshot`] directly.
+//!
+//! See `doc/adr/0008-contract-abstraction-reform.md` for the full
+//! rationale; the original `BuiltTx`-opaque scaffold landed in R2-1 and is
+//! preserved here so `LiveBackend` stays implementable once the wallet
+//! bridge is in place — only the recording backend cares about the JSON
+//! envelope shape.
 
 use std::fmt;
 use std::sync::Mutex;
@@ -19,45 +30,46 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use compact_runtime::{empty_charged_state, ChargedState, DefaultDB};
 
+use crate::contract_call::{DidContractCall, DidLedgerSnapshot};
+
 /// A transaction built and proven by the upstream wallet + proof stack,
 /// ready for submission via [`Backend::submit_tx`].
 ///
-/// R2-1 introduces this as an opaque placeholder so the [`Backend`]
-/// trait surface can land before the wallet SDK port is in place. R2's
-/// follow-up will replace this with the actual ledger-level transaction
-/// type (likely a re-export of the upstream Midnight transaction shape).
+/// v0.4.0 (Path 2): the bytes are produced by
+/// [`crate::contract_call::DidContractCall::encode`] when the active backend
+/// is `RecordingBackend`. Once the wallet/proof bridge lands, `LiveBackend`
+/// will populate this with the upstream Midnight transaction shape.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BuiltTx {
-    /// Opaque proven-transaction bytes. The exact wire shape is owned
-    /// by the upstream ledger / proof stack and will be re-typed in the
-    /// R2 follow-up that wires [`LiveBackend`].
+    /// Opaque transaction bytes. The active backend owns the encoding;
+    /// recording backends use [`DidContractCall::encode`] /
+    /// [`DidContractCall::decode`].
     pub bytes: Vec<u8>,
 }
 
 /// Finalisation data for a submitted transaction.
 ///
-/// Mirrors the shape of `midnight_did_api::contract::FinalizedTxData`
-/// in R2-1 to keep the api crate's surface stable across the
-/// migration. R2-2 will collapse the duplicate definition once the api
-/// crate depends on this crate directly.
+/// Mirrors the shape of the legacy `midnight_did_api::contract::FinalizedTxData`.
+/// Once R2-2 lands the api crate re-exports this type so the duplicate
+/// definition is retired.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct FinalizedTxData {
-    /// Transaction hash (hex). Empty in mock implementations.
+    /// Transaction hash (hex). Synthesised by [`RecordingBackend::submit_tx`]
+    /// from a blake2b of the envelope bytes; empty until [`LiveBackend`]
+    /// is wired.
     pub tx_hash: String,
-    /// Block height the transaction was included in. Zero in mocks.
+    /// Block height the transaction was included in. Synthesised by
+    /// [`RecordingBackend::submit_tx`] from the recorded-call count.
     pub block_height: u64,
 }
 
 /// Errors raised by a [`Backend`] implementation.
-///
-/// Narrow, I/O-focused. High-level circuit-call failures continue to
-/// surface as `ContractError` in the api crate (unchanged by R2).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BackendError {
     /// Network / RPC failure talking to the Midnight node or indexer.
     Network(String),
-    /// The on-chain state could not be decoded into a
-    /// [`ChargedState<DefaultDB>`].
+    /// The on-chain state, or the [`DidContractCall`] envelope, could not
+    /// be decoded into the expected shape.
     Decode(String),
     /// The backend is read-only — used by [`ResolverBackend`] to reject
     /// any [`Backend::submit_tx`] call.
@@ -81,20 +93,28 @@ impl std::error::Error for BackendError {}
 
 /// Substrate-agnostic I/O abstraction for the DID contract.
 ///
-/// Two methods. Submit a (proven, signed) transaction; read the
-/// current contract state. Everything above this — the 12 circuit
-/// methods, the snapshot mapper, the operation builders — is identical
-/// concrete code regardless of which `Backend` impl is plugged in.
+/// Three methods: submit a (proven, signed) envelope; read the raw
+/// [`ChargedState`] (used by the future wallet bridge); read a decoded
+/// [`DidLedgerSnapshot`] (used today by `Contract<B>::read_snapshot`).
 #[async_trait]
 pub trait Backend: Send + Sync {
-    /// Submit a built transaction (already proven + signed by the
-    /// upstream stack) and return its finalisation data.
+    /// Submit a built transaction envelope and return its finalisation data.
     async fn submit_tx(&self, tx: BuiltTx) -> Result<FinalizedTxData, BackendError>;
 
-    /// Read the current contract state from the indexer / public-data
-    /// provider, returning the raw [`ChargedState<DefaultDB>`] that
-    /// `Ledger::<DefaultDB>::new()` can decode.
+    /// Read the raw on-chain [`ChargedState`].
+    ///
+    /// Kept for the future wallet/proof bridge that will decode it
+    /// alongside upstream `Ledger::<DefaultDB>::new(...)`. `Contract<B>`
+    /// callers should prefer [`Self::read_snapshot`].
     async fn read_state(&self) -> Result<ChargedState<DefaultDB>, BackendError>;
+
+    /// Read a plain-data [`DidLedgerSnapshot`].
+    ///
+    /// This is the read path `Contract<B>::read_snapshot` drives. For
+    /// [`LiveBackend`] this will eventually wire the `Ledger -> DidLedgerSnapshot`
+    /// mapper; for [`RecordingBackend`] and [`ResolverBackend`] the snapshot
+    /// is stored verbatim by the test / consumer.
+    async fn read_snapshot(&self) -> Result<DidLedgerSnapshot, BackendError>;
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -105,22 +125,21 @@ pub trait Backend: Send + Sync {
 ///
 /// # TODO
 ///
-/// R2-1 ships this as a placeholder whose methods panic via
-/// [`todo!`]. The R2 follow-up wires the real upstream stack:
+/// v0.4.0 ships this as a placeholder whose methods panic via [`todo!`].
+/// The next cycle wires the real upstream stack:
 ///
 /// - `wallet_sdk` — drives transaction construction + signing.
 /// - `proof_server` — produces the halo2 proofs `submit_tx` carries.
-/// - `indexer` — services `read_state` via the public-data provider.
+/// - `indexer` — services `read_state` / `read_snapshot` via the public-data provider.
 ///
-/// Tracked in ADR 0008 (R2 contract abstraction reform) and the R2
-/// design spec (`doc/specs/2026-06-24-r2-contract-abstraction-design.md`).
+/// Tracked in ADR 0008 (R2 contract abstraction reform).
 #[derive(Debug, Default)]
 pub struct LiveBackend {
-    /// Wallet SDK handle. `()` until R2 follow-up types it.
+    /// Wallet SDK handle. `()` until the wallet bridge lands.
     pub wallet_sdk: (),
-    /// Proof-server client handle. `()` until R2 follow-up types it.
+    /// Proof-server client handle. `()` until the wallet bridge lands.
     pub proof_server: (),
-    /// Indexer / public-data-provider client. `()` until R2 follow-up.
+    /// Indexer / public-data-provider client. `()` until the wallet bridge lands.
     pub indexer: (),
 }
 
@@ -140,6 +159,10 @@ impl Backend for LiveBackend {
     async fn read_state(&self) -> Result<ChargedState<DefaultDB>, BackendError> {
         todo!("LiveBackend: wire wallet+proof+indexer")
     }
+
+    async fn read_snapshot(&self) -> Result<DidLedgerSnapshot, BackendError> {
+        todo!("LiveBackend: wire the Ledger -> DidLedgerSnapshot mapper")
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -148,24 +171,27 @@ impl Backend for LiveBackend {
 
 /// In-memory mock backend used by api-layer tests.
 ///
-/// Records every [`Backend::submit_tx`] call as a [`BuiltTx`] in order.
-/// [`Backend::read_state`] returns a clone of a settable snapshot
-/// (defaults to [`empty_charged_state`]).
-///
-/// Replaces the R1-era `RecordingContract` mock once R2-2 migrates the
-/// operation builders to depend on `Contract<B>` instead of
-/// `&dyn DidContract`.
+/// [`Backend::submit_tx`] decodes the envelope into a [`DidContractCall`]
+/// and pushes it onto an internal call list ([`Self::recorded_calls`]).
+/// [`Backend::read_state`] returns a clone of the stored
+/// [`ChargedState`] (defaults to [`empty_charged_state`]).
+/// [`Backend::read_snapshot`] returns a clone of the stored
+/// [`DidLedgerSnapshot`] and records a synthetic
+/// [`DidContractCall::ReadLedger`] entry to preserve the legacy
+/// `RecordedCall::ReadLedger` test-sequencing semantics.
 pub struct RecordingBackend {
-    txs: Mutex<Vec<BuiltTx>>,
+    calls: Mutex<Vec<DidContractCall>>,
     state: Mutex<ChargedState<DefaultDB>>,
+    snapshot: Mutex<DidLedgerSnapshot>,
 }
 
 impl fmt::Debug for RecordingBackend {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let txs_len = self.txs.lock().map(|v| v.len()).unwrap_or(0);
+        let calls_len = self.calls.lock().map(|v| v.len()).unwrap_or(0);
         f.debug_struct("RecordingBackend")
-            .field("recorded_tx_count", &txs_len)
+            .field("recorded_call_count", &calls_len)
             .field("state", &"<ChargedState<DefaultDB>>")
+            .field("snapshot", &"<DidLedgerSnapshot>")
             .finish()
     }
 }
@@ -177,49 +203,87 @@ impl Default for RecordingBackend {
 }
 
 impl RecordingBackend {
-    /// Construct a fresh [`RecordingBackend`] with no recorded txs and
-    /// an empty [`ChargedState`].
+    /// Construct a fresh [`RecordingBackend`] with no recorded calls and
+    /// an empty [`ChargedState`] + default [`DidLedgerSnapshot`].
     pub fn new() -> Self {
         Self {
-            txs: Mutex::new(Vec::new()),
+            calls: Mutex::new(Vec::new()),
             state: Mutex::new(empty_charged_state::<DefaultDB>()),
+            snapshot: Mutex::new(DidLedgerSnapshot::default()),
         }
     }
 
-    /// Construct a [`RecordingBackend`] seeded with a specific state.
+    /// Construct a [`RecordingBackend`] seeded with a specific [`ChargedState`].
     pub fn with_state(state: ChargedState<DefaultDB>) -> Self {
         Self {
-            txs: Mutex::new(Vec::new()),
+            calls: Mutex::new(Vec::new()),
             state: Mutex::new(state),
+            snapshot: Mutex::new(DidLedgerSnapshot::default()),
         }
     }
 
-    /// Snapshot of every [`BuiltTx`] that has been submitted, in order.
-    pub fn recorded_txs(&self) -> Vec<BuiltTx> {
-        self.txs.lock().unwrap().clone()
+    /// Construct a [`RecordingBackend`] seeded with a specific [`DidLedgerSnapshot`].
+    pub fn with_snapshot(snapshot: DidLedgerSnapshot) -> Self {
+        Self {
+            calls: Mutex::new(Vec::new()),
+            state: Mutex::new(empty_charged_state::<DefaultDB>()),
+            snapshot: Mutex::new(snapshot),
+        }
     }
 
-    /// Replace the state returned by [`Backend::read_state`].
+    /// Snapshot of every decoded [`DidContractCall`] in submission order
+    /// (including synthetic [`DidContractCall::ReadLedger`] entries pushed
+    /// by [`Self::read_snapshot`]).
+    pub fn recorded_calls(&self) -> Vec<DidContractCall> {
+        self.calls.lock().unwrap().clone()
+    }
+
+    /// Replace the [`ChargedState`] returned by [`Backend::read_state`].
     pub fn set_state(&self, state: ChargedState<DefaultDB>) {
         *self.state.lock().unwrap() = state;
+    }
+
+    /// Replace the snapshot returned by [`Backend::read_snapshot`].
+    pub fn set_snapshot(&self, snapshot: DidLedgerSnapshot) {
+        *self.snapshot.lock().unwrap() = snapshot;
     }
 }
 
 #[async_trait]
 impl Backend for RecordingBackend {
     async fn submit_tx(&self, tx: BuiltTx) -> Result<FinalizedTxData, BackendError> {
-        self.txs.lock().unwrap().push(tx);
-        // R2-1: return a stub. R2-2 will decide whether tests want a
-        // deterministic synthetic hash / block height or an opt-in seam
-        // for asserting on those fields.
-        Err(BackendError::Other(
-            "RecordingBackend: stub submit_tx".into(),
-        ))
+        let call = DidContractCall::decode(&tx.bytes)?;
+        let mut calls = self.calls.lock().unwrap();
+        calls.push(call);
+        // Synthesise deterministic finalisation data from the recorded
+        // count + the envelope bytes so callers that look at
+        // `tx_hash` / `block_height` see consistent values.
+        let block_height = calls.len() as u64;
+        let tx_hash = synth_tx_hash(&tx.bytes);
+        Ok(FinalizedTxData { tx_hash, block_height })
     }
 
     async fn read_state(&self) -> Result<ChargedState<DefaultDB>, BackendError> {
         Ok(self.state.lock().unwrap().clone())
     }
+
+    async fn read_snapshot(&self) -> Result<DidLedgerSnapshot, BackendError> {
+        self.calls.lock().unwrap().push(DidContractCall::ReadLedger);
+        Ok(self.snapshot.lock().unwrap().clone())
+    }
+}
+
+/// Deterministic synthetic tx hash for the recording backend. Uses a
+/// short hex prefix of blake2b-256 — opaque to consumers, deterministic
+/// for tests.
+fn synth_tx_hash(bytes: &[u8]) -> String {
+    use blake2::{Blake2b512, Digest};
+    let mut hasher = Blake2b512::new();
+    hasher.update(bytes);
+    let out = hasher.finalize();
+    // 16 hex chars (8 bytes) is plenty for the tests + keeps the
+    // assertion-friendly short form.
+    hex::encode(&out[..8])
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -229,26 +293,42 @@ impl Backend for RecordingBackend {
 /// Read-only backend for the resolver consumer.
 ///
 /// [`Backend::submit_tx`] always returns [`BackendError::ReadOnly`].
-/// [`Backend::read_state`] returns a clone of the snapshot supplied at
-/// construction. Drops the wallet / proof-server / indexer dep cone for
-/// consumers that only need the resolve path.
+/// [`Backend::read_state`] returns a clone of the [`ChargedState`] supplied
+/// at construction; [`Backend::read_snapshot`] returns a clone of the
+/// [`DidLedgerSnapshot`] supplied at construction. Drops the wallet / proof-server /
+/// indexer dep cone for consumers that only need the resolve path.
 pub struct ResolverBackend {
-    /// Snapshot served on every [`Backend::read_state`] call.
+    /// [`ChargedState`] served on every [`Backend::read_state`] call.
     pub state: ChargedState<DefaultDB>,
+    /// Snapshot served on every [`Backend::read_snapshot`] call.
+    pub snapshot: DidLedgerSnapshot,
 }
 
 impl fmt::Debug for ResolverBackend {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ResolverBackend")
             .field("state", &"<ChargedState<DefaultDB>>")
+            .field("snapshot", &"<DidLedgerSnapshot>")
             .finish()
     }
 }
 
 impl ResolverBackend {
-    /// Construct a [`ResolverBackend`] over `state`.
+    /// Construct a [`ResolverBackend`] over `state` + an empty snapshot.
     pub fn new(state: ChargedState<DefaultDB>) -> Self {
-        Self { state }
+        Self {
+            state,
+            snapshot: DidLedgerSnapshot::default(),
+        }
+    }
+
+    /// Construct a [`ResolverBackend`] over a specific snapshot (empty
+    /// raw state).
+    pub fn with_snapshot(snapshot: DidLedgerSnapshot) -> Self {
+        Self {
+            state: empty_charged_state::<DefaultDB>(),
+            snapshot,
+        }
     }
 }
 
@@ -261,6 +341,10 @@ impl Backend for ResolverBackend {
     async fn read_state(&self) -> Result<ChargedState<DefaultDB>, BackendError> {
         Ok(self.state.clone())
     }
+
+    async fn read_snapshot(&self) -> Result<DidLedgerSnapshot, BackendError> {
+        Ok(self.snapshot.clone())
+    }
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -270,6 +354,7 @@ impl Backend for ResolverBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::contract_call::DidContractCall;
 
     fn rt() -> tokio::runtime::Runtime {
         tokio::runtime::Builder::new_current_thread()
@@ -279,23 +364,45 @@ mod tests {
     }
 
     #[test]
-    fn recording_backend_records_submit() {
+    fn recording_backend_decodes_and_records_submit() {
         let rt = rt();
         let backend = RecordingBackend::new();
-        let tx1 = BuiltTx {
-            bytes: vec![0xAA, 0xBB],
+        let call1 = DidContractCall::Deactivate;
+        let call2 = DidContractCall::RotateControllerKey {
+            new_public_key: [3u8; 32],
         };
-        let tx2 = BuiltTx {
-            bytes: vec![0xCC, 0xDD],
-        };
-        // Both submits are expected to return the stub error; what we
-        // assert on is the recorded sequence, not the result.
-        let _ = rt.block_on(backend.submit_tx(tx1.clone()));
-        let _ = rt.block_on(backend.submit_tx(tx2.clone()));
-        let recorded = backend.recorded_txs();
+        let tx1 = BuiltTx { bytes: call1.encode() };
+        let tx2 = BuiltTx { bytes: call2.encode() };
+        let f1 = rt.block_on(backend.submit_tx(tx1)).unwrap();
+        let f2 = rt.block_on(backend.submit_tx(tx2)).unwrap();
+        assert_eq!(f1.block_height, 1);
+        assert_eq!(f2.block_height, 2);
+        assert!(!f1.tx_hash.is_empty());
+        let recorded = backend.recorded_calls();
         assert_eq!(recorded.len(), 2);
-        assert_eq!(recorded[0], tx1);
-        assert_eq!(recorded[1], tx2);
+        assert_eq!(recorded[0], call1);
+        assert_eq!(recorded[1], call2);
+    }
+
+    #[test]
+    fn recording_backend_submit_rejects_garbage_envelope() {
+        let rt = rt();
+        let backend = RecordingBackend::new();
+        let res = rt.block_on(backend.submit_tx(BuiltTx { bytes: vec![0xff, 0xfe] }));
+        assert!(matches!(res, Err(BackendError::Decode(_))));
+        // No call recorded on decode failure.
+        assert_eq!(backend.recorded_calls().len(), 0);
+    }
+
+    #[test]
+    fn recording_backend_read_snapshot_records_synthetic_read_ledger() {
+        let rt = rt();
+        let mut snap = DidLedgerSnapshot::default();
+        snap.version = 7;
+        let backend = RecordingBackend::with_snapshot(snap.clone());
+        let read = rt.block_on(backend.read_snapshot()).unwrap();
+        assert_eq!(read, snap);
+        assert_eq!(backend.recorded_calls(), vec![DidContractCall::ReadLedger]);
     }
 
     #[test]
@@ -313,5 +420,15 @@ mod tests {
         let backend = ResolverBackend::new(sentinel.clone());
         let read = rt.block_on(backend.read_state()).expect("read_state");
         assert_eq!(read, sentinel);
+    }
+
+    #[test]
+    fn resolver_backend_returns_snapshot() {
+        let rt = rt();
+        let mut snap = DidLedgerSnapshot::default();
+        snap.version = 42;
+        let backend = ResolverBackend::with_snapshot(snap.clone());
+        let got = rt.block_on(backend.read_snapshot()).unwrap();
+        assert_eq!(got, snap);
     }
 }

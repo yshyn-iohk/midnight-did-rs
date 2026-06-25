@@ -32,9 +32,25 @@ midnight-serialize        = { workspace = true }
 midnight-storage          = { workspace = true }
 midnight-transient-crypto = { workspace = true }
 
+# Sibling first-party crates — R2-2 (v0.4.0) lifts ledger-shape types
+# (`DidLedgerSnapshot`, `LedgerVerificationMethod`, `MapMutation`, …) into
+# this crate so `DidContractCall` can carry them as variant payloads. The
+# api crate now re-exports these for downstream consumers.
+midnight-did-domain = { workspace = true }
+midnight-did-method = { workspace = true }
+
 # R2-1: async-trait for the I/O-substrate `Backend` trait. Pinned to
 # 0.1 to match the version already used by `midnight-did-api`.
 async-trait               = "0.1"
+
+# R2-2 (v0.4.0): `DidContractCall` is serialised into `BuiltTx::bytes`
+# via serde_json so the recording backend can decode the typed envelope.
+# blake2 is used by the recording backend to synthesise a deterministic
+# `FinalizedTxData::tx_hash` from the envelope bytes.
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+hex         = { workspace = true }
+blake2      = "0.10"
 
 [dev-dependencies]
 # R2-1: tokio runtime for the `Backend` impls' unit tests (current-thread,
