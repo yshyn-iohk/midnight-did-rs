@@ -18,53 +18,71 @@
 //! Rust port of `packages/api/src/service-operations.ts`.
 
 use midnight_did_domain::{did_document::Service, ledger_utils::BoundIdField};
+use midnight_did_runtime::{Backend, Contract};
 
 use crate::{
-    contract::{DidContract, FinalizedTxData, MapMutation},
-    error::ApiError,
+    contract::{FinalizedTxData, MapMutation},
+    error::{ApiError, ContractError},
     ledger_mappers::service_to_ledger,
     subject::normalize_bound_fragment_id_for,
 };
 
 /// `addService`.
-pub async fn add_service<C: DidContract + ?Sized>(
-    did_contract: &C,
+pub async fn add_service<B: Backend>(
+    contract: &Contract<B>,
     service: &Service,
 ) -> Result<FinalizedTxData, ApiError> {
-    let ledger = service_to_ledger(did_contract, service)?;
-    Ok(did_contract.set_service(ledger, MapMutation::Insert).await?)
+    let ledger = service_to_ledger(contract, service)?;
+    contract
+        .set_service(ledger, MapMutation::Insert)
+        .await
+        .map_err(|e| ApiError::Contract(ContractError::Failed(e.to_string())))
 }
 
 /// `updateService`.
-pub async fn update_service<C: DidContract + ?Sized>(
-    did_contract: &C,
+pub async fn update_service<B: Backend>(
+    contract: &Contract<B>,
     service: &Service,
 ) -> Result<FinalizedTxData, ApiError> {
-    let ledger = service_to_ledger(did_contract, service)?;
-    Ok(did_contract.set_service(ledger, MapMutation::Update).await?)
+    let ledger = service_to_ledger(contract, service)?;
+    contract
+        .set_service(ledger, MapMutation::Update)
+        .await
+        .map_err(|e| ApiError::Contract(ContractError::Failed(e.to_string())))
 }
 
 /// `removeService`.
-pub async fn remove_service<C: DidContract + ?Sized>(
-    did_contract: &C,
+pub async fn remove_service<B: Backend>(
+    contract: &Contract<B>,
     service_id: &str,
 ) -> Result<FinalizedTxData, ApiError> {
-    let normalized = normalize_bound_fragment_id_for(did_contract, service_id, BoundIdField::ShortServiceId)?;
-    Ok(did_contract.remove_service(normalized).await?)
+    let normalized = normalize_bound_fragment_id_for(contract, service_id, BoundIdField::ShortServiceId)?;
+    contract
+        .remove_service(normalized)
+        .await
+        .map_err(|e| ApiError::Contract(ContractError::Failed(e.to_string())))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contract::mock::{RecordedCall, RecordingContract};
     use midnight_did_domain::did_document::{NewService, ServiceEndpoint, ServiceType};
-    use midnight_did_method::midnight_did::MidnightNetwork;
+    use midnight_did_method::midnight_did::{MidnightNetwork, parse_contract_address};
+    use midnight_did_runtime::{DidContractCall, RecordingBackend};
 
     const ADDR: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 
+    fn contract() -> Contract<RecordingBackend> {
+        Contract::new(
+            RecordingBackend::new(),
+            parse_contract_address(ADDR).unwrap(),
+            MidnightNetwork::Testnet,
+        )
+    }
+
     #[tokio::test]
     async fn adds_a_service() {
-        let contract = RecordingContract::new(ADDR, MidnightNetwork::Testnet);
+        let contract = contract();
         let svc = Service::new(NewService {
             id: "svc-1".into(),
             type_: ServiceType::One("LinkedDomains".into()),
@@ -72,18 +90,18 @@ mod tests {
         })
         .expect("valid service");
         add_service(&contract, &svc).await.unwrap();
-        let calls = contract.calls();
+        let calls = contract.backend.recorded_calls();
         assert!(matches!(
             &calls[..],
-            [RecordedCall::SetService(ledger, MapMutation::Insert)] if ledger.id == "#svc-1"
+            [DidContractCall::SetService { service, mutation: MapMutation::Insert }] if service.id == "#svc-1"
         ));
     }
 
     #[tokio::test]
     async fn removes_a_service() {
-        let contract = RecordingContract::new(ADDR, MidnightNetwork::Testnet);
+        let contract = contract();
         remove_service(&contract, "svc-1").await.unwrap();
-        let calls = contract.calls();
-        assert!(matches!(&calls[..], [RecordedCall::RemoveService(id)] if id == "#svc-1"));
+        let calls = contract.backend.recorded_calls();
+        assert!(matches!(&calls[..], [DidContractCall::RemoveService { service_id }] if service_id == "#svc-1"));
     }
 }

@@ -35,12 +35,15 @@ use midnight_did_domain::{
 };
 use midnight_did_method::midnight_did::{MidnightNetwork, create_midnight_did_string};
 
+use midnight_did_method::hex_ext::HashOutputExt;
+use midnight_did_runtime::{Backend, Contract};
+
 use crate::{
     contract::{
-        DidContract, DidLedgerSnapshot, LedgerPublicKeyJwk, LedgerSchnorrJubjubVerificationMethod, LedgerService,
+        DidLedgerSnapshot, LedgerPublicKeyJwk, LedgerSchnorrJubjubVerificationMethod, LedgerService,
         LedgerVerificationMethodRelation,
     },
-    error::ApiError,
+    error::{ApiError, ContractError},
 };
 
 /// Outcome of [`resolve`]: a `(document, metadata)` pair.
@@ -57,15 +60,17 @@ pub struct ResolvedMidnightDid {
 ///
 /// Returns `Ok(None)` if the contract has no live state (mirrors the TS
 /// `null` return).
-pub async fn resolve<C: DidContract + ?Sized>(did_contract: &C) -> Result<Option<ResolvedMidnightDid>, ApiError> {
-    let state = match did_contract.read_ledger().await {
+pub async fn resolve<B: Backend>(contract: &Contract<B>) -> Result<Option<ResolvedMidnightDid>, ApiError> {
+    let state = match contract.read_snapshot().await {
         Ok(state) => state,
-        Err(crate::error::ContractError::NotDeployed) => return Ok(None),
-        Err(crate::error::ContractError::StateUnavailable) => return Ok(None),
-        Err(other) => return Err(ApiError::Contract(other)),
+        // R2-2 collapses the backend's failure modes into a single
+        // `ContractError::Failed(_)` (the live `NotDeployed`/`StateUnavailable`
+        // discrimination will return once `LiveBackend` lands and can
+        // surface those signals through `BackendError`).
+        Err(err) => return Err(ApiError::Contract(ContractError::Failed(err.to_string()))),
     };
-    let network = did_contract.network();
-    let address = did_contract.contract_address();
+    let network = contract.network();
+    let address = contract.address.to_hex();
     let did_document = ledger_state_to_did_document(&state, network, &address)?;
     let did_document_metadata = ledger_state_to_metadata(&state);
     Ok(Some(ResolvedMidnightDid {

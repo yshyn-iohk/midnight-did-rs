@@ -2194,6 +2194,7 @@ dependencies = [
  "hex",
  "midnight-did-domain",
  "midnight-did-method",
+ "midnight-did-runtime",
  "serde",
  "serde_json",
  "thiserror",

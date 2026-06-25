@@ -18,68 +18,86 @@
 //! Rust port of `packages/api/src/document-operations.ts`.
 
 use midnight_did_domain::ledger_utils::assert_absolute_uri;
+use midnight_did_runtime::{Backend, Contract};
 
 use crate::{
-    contract::{DidContract, FinalizedTxData, SetMutation},
-    error::ApiError,
+    contract::{FinalizedTxData, SetMutation},
+    error::{ApiError, ContractError},
 };
 
 /// `addAlsoKnownAs(didContract, aliasUri)` — adds an `alsoKnownAs` entry on
 /// the DID document.
-pub async fn add_also_known_as<C: DidContract + ?Sized>(
-    did_contract: &C,
+pub async fn add_also_known_as<B: Backend>(
+    contract: &Contract<B>,
     alias_uri: &str,
 ) -> Result<FinalizedTxData, ApiError> {
     let alias = assert_absolute_uri(alias_uri, Some("aliasUri"))?;
-    Ok(did_contract.set_also_known_as(alias, SetMutation::Insert).await?)
+    contract
+        .set_also_known_as(alias, SetMutation::Insert)
+        .await
+        .map_err(|e| ApiError::Contract(ContractError::Failed(e.to_string())))
 }
 
 /// `removeAlsoKnownAs(didContract, aliasUri)`.
-pub async fn remove_also_known_as<C: DidContract + ?Sized>(
-    did_contract: &C,
+pub async fn remove_also_known_as<B: Backend>(
+    contract: &Contract<B>,
     alias_uri: &str,
 ) -> Result<FinalizedTxData, ApiError> {
     let alias = assert_absolute_uri(alias_uri, Some("aliasUri"))?;
-    Ok(did_contract.set_also_known_as(alias, SetMutation::Remove).await?)
+    contract
+        .set_also_known_as(alias, SetMutation::Remove)
+        .await
+        .map_err(|e| ApiError::Contract(ContractError::Failed(e.to_string())))
 }
 
 /// `deactivate(didContract)` — mark the DID inactive + deactivated on
 /// the ledger.
-pub async fn deactivate<C: DidContract + ?Sized>(did_contract: &C) -> Result<FinalizedTxData, ApiError> {
-    Ok(did_contract.deactivate().await?)
+pub async fn deactivate<B: Backend>(contract: &Contract<B>) -> Result<FinalizedTxData, ApiError> {
+    contract
+        .deactivate()
+        .await
+        .map_err(|e| ApiError::Contract(ContractError::Failed(e.to_string())))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contract::mock::{RecordedCall, RecordingContract};
-    use midnight_did_method::midnight_did::MidnightNetwork;
+    use midnight_did_method::midnight_did::{MidnightNetwork, parse_contract_address};
+    use midnight_did_runtime::{DidContractCall, RecordingBackend};
 
     const ADDR: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 
+    fn contract() -> Contract<RecordingBackend> {
+        Contract::new(
+            RecordingBackend::new(),
+            parse_contract_address(ADDR).unwrap(),
+            MidnightNetwork::Testnet,
+        )
+    }
+
     #[tokio::test]
     async fn adds_an_alias() {
-        let contract = RecordingContract::new(ADDR, MidnightNetwork::Testnet);
+        let contract = contract();
         add_also_known_as(&contract, "https://example.com").await.unwrap();
-        let calls = contract.calls();
+        let calls = contract.backend.recorded_calls();
         assert!(matches!(
             &calls[..],
-            [RecordedCall::SetAlsoKnownAs(uri, SetMutation::Insert)] if uri == "https://example.com"
+            [DidContractCall::SetAlsoKnownAs { alias_uri, mutation: SetMutation::Insert }] if alias_uri == "https://example.com"
         ));
     }
 
     #[tokio::test]
     async fn rejects_non_absolute_alias() {
-        let contract = RecordingContract::new(ADDR, MidnightNetwork::Testnet);
+        let contract = contract();
         let err = add_also_known_as(&contract, "not-a-uri").await.unwrap_err();
         assert!(matches!(err, ApiError::LedgerUtils(_)));
     }
 
     #[tokio::test]
     async fn deactivates() {
-        let contract = RecordingContract::new(ADDR, MidnightNetwork::Testnet);
+        let contract = contract();
         deactivate(&contract).await.unwrap();
-        let calls = contract.calls();
-        assert!(matches!(&calls[..], [RecordedCall::Deactivate]));
+        let calls = contract.backend.recorded_calls();
+        assert!(matches!(&calls[..], [DidContractCall::Deactivate]));
     }
 }

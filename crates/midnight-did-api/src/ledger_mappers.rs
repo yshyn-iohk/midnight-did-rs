@@ -25,9 +25,11 @@
 //! [`crate::contract::DidLedgerSnapshot::relation_set`] — the ledger
 //! abstraction owns the relation lookup.
 
+use midnight_did_runtime::{Backend, Contract};
+
 use crate::{
     contract::{
-        DidContract, JubjubPointHex, LedgerPublicKeyJwk, LedgerSchnorrJubjubVerificationMethod, LedgerService,
+        JubjubPointHex, LedgerPublicKeyJwk, LedgerSchnorrJubjubVerificationMethod, LedgerService,
         LedgerVerificationMethod, LedgerVerificationMethodRelation,
     },
     error::ApiError,
@@ -144,19 +146,19 @@ pub fn assert_midnight_key_profile(jwk: &PublicKeyJwk) -> Result<(), ApiError> {
 /// Map a domain [`VerificationMethod`] into the ledger-wire shape, enforcing
 /// the Midnight-method profile constraints and validating that the
 /// `controller` field equals the DID subject of `did_contract`.
-pub fn verification_method_to_ledger<C: DidContract + ?Sized>(
-    did_contract: &C,
+pub fn verification_method_to_ledger<B: Backend>(
+    contract: &Contract<B>,
     method: &VerificationMethod,
 ) -> Result<LedgerVerificationMethod, ApiError> {
     if !matches!(method.type_(), VerificationMethodType::JsonWebKey) {
         return Err(ApiError::invalid_argument("verificationMethod.type must be JsonWebKey"));
     }
     assert_midnight_key_profile(method.public_key_jwk())?;
-    let subject = crate::subject::get_did_subject(did_contract)?;
+    let subject = crate::subject::get_did_subject(contract)?;
     if method.controller().as_str() != subject {
         return Err(ApiError::Controller(crate::error::ControllerError::SubjectMismatch { expected: subject }));
     }
-    let id = normalize_bound_fragment_id_for(did_contract, method.id().as_str(), BoundIdField::VerificationMethodId)?;
+    let id = normalize_bound_fragment_id_for(contract, method.id().as_str(), BoundIdField::VerificationMethodId)?;
     Ok(LedgerVerificationMethod {
         id,
         typ: method.type_(),
@@ -166,12 +168,12 @@ pub fn verification_method_to_ledger<C: DidContract + ?Sized>(
 
 /// Map a Schnorr-Jubjub [`SchnorrJubjubVerificationMethod`] into the
 /// ledger-wire shape.
-pub fn schnorr_jubjub_verification_method_to_ledger<C: DidContract + ?Sized>(
-    did_contract: &C,
+pub fn schnorr_jubjub_verification_method_to_ledger<B: Backend>(
+    contract: &Contract<B>,
     method: &SchnorrJubjubVerificationMethod,
 ) -> Result<LedgerSchnorrJubjubVerificationMethod, ApiError> {
     let id = normalize_bound_fragment_id_for(
-        did_contract,
+        contract,
         &method.id,
         BoundIdField::SchnorrJubjubVerificationMethodId,
     )?;
@@ -183,13 +185,13 @@ pub fn schnorr_jubjub_verification_method_to_ledger<C: DidContract + ?Sized>(
 
 /// Map a domain [`Service`] into the ledger-wire shape, including JSON
 /// canonicalisation of the service endpoint.
-pub fn service_to_ledger<C: DidContract + ?Sized>(
-    did_contract: &C,
+pub fn service_to_ledger<B: Backend>(
+    contract: &Contract<B>,
     service: &Service,
 ) -> Result<LedgerService, ApiError> {
     let endpoint = service_endpoint_to_ledger(service.service_endpoint().clone());
     let typ = service_type_to_ledger(service.type_())?;
-    let id = normalize_bound_fragment_id_for(did_contract, service.id(), BoundIdField::ServiceId)?;
+    let id = normalize_bound_fragment_id_for(contract, service.id(), BoundIdField::ServiceId)?;
     Ok(LedgerService {
         id,
         typ,
@@ -233,17 +235,25 @@ pub fn relation_set_from_state(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::contract::mock::RecordingContract;
     use midnight_did_domain::did_document::{
         NewPublicKeyJwk, NewService, NewVerificationMethod, ServiceEndpoint, ServiceType,
     };
-    use midnight_did_method::midnight_did::MidnightNetwork;
+    use midnight_did_method::midnight_did::{MidnightNetwork, parse_contract_address};
+    use midnight_did_runtime::RecordingBackend;
     use std::collections::BTreeMap;
 
     const ADDR: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 
     fn did_subject() -> String {
         format!("did:midnight:testnet:{ADDR}")
+    }
+
+    fn test_contract() -> Contract<RecordingBackend> {
+        Contract::new(
+            RecordingBackend::new(),
+            parse_contract_address(ADDR).unwrap(),
+            MidnightNetwork::Testnet,
+        )
     }
 
     fn p256_jwk(x: &str, y: &str) -> PublicKeyJwk {
@@ -265,7 +275,7 @@ mod tests {
     #[test]
     fn maps_p256_verification_method() {
         let coord = zeros32_b64url();
-        let contract = RecordingContract::new(ADDR, MidnightNetwork::Testnet);
+        let contract = test_contract();
         let vm = VerificationMethod::new(NewVerificationMethod {
             id: format!("{}#key-1", did_subject()),
             type_: VerificationMethodType::JsonWebKey,
@@ -283,7 +293,7 @@ mod tests {
     #[test]
     fn rejects_jubjub_in_jwk_path() {
         let coord = zeros32_b64url();
-        let contract = RecordingContract::new(ADDR, MidnightNetwork::Testnet);
+        let contract = test_contract();
         // Construct a Jubjub JWK via ::new so structural fields pass; the
         // ledger-mapper rejects Jubjub downstream.
         let jubjub_jwk = PublicKeyJwk::new(NewPublicKeyJwk {
@@ -308,7 +318,7 @@ mod tests {
     #[test]
     fn rejects_controller_mismatch() {
         let coord = zeros32_b64url();
-        let contract = RecordingContract::new(ADDR, MidnightNetwork::Testnet);
+        let contract = test_contract();
         let other = "1".repeat(64);
         let vm = VerificationMethod::new(NewVerificationMethod {
             id: format!("did:midnight:testnet:{other}#key-1"),
@@ -323,7 +333,7 @@ mod tests {
 
     #[test]
     fn maps_service() {
-        let contract = RecordingContract::new(ADDR, MidnightNetwork::Testnet);
+        let contract = test_contract();
         let svc = Service::new(midnight_did_domain::did_document::NewService {
             id: "svc-1".into(),
             type_: ServiceType::One("LinkedDomains".into()),

@@ -18,13 +18,18 @@ all-features = true
 rustdoc-args = ["--cfg", "docsrs"]
 
 [dependencies]
-midnight-did-domain = { workspace = true }
-midnight-did-method = { workspace = true }
-serde               = { workspace = true }
-serde_json          = { workspace = true }
-hex                 = { workspace = true }
-thiserror           = "2"
-async-trait         = "0.1"
+midnight-did-domain  = { workspace = true }
+midnight-did-method  = { workspace = true }
+# R2-2 (v0.4.0): operation builders take `&Contract<B>` directly. The
+# ledger-shape types (MapMutation, LedgerVerificationMethod, …) now live
+# in the runtime crate and are re-exported through `contract` for the
+# api's backward-compatible surface.
+midnight-did-runtime = { workspace = true }
+serde                = { workspace = true }
+serde_json           = { workspace = true }
+hex                  = { workspace = true }
+thiserror            = "2"
+async-trait          = "0.1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["macros", "rt", "sync"] }
