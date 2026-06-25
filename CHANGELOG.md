@@ -10,6 +10,90 @@ All notable changes to the `midnight-did-rs` workspace are recorded
 here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project adheres to [SemVer](https://semver.org/).
 
+## [Unreleased] — v0.4.0
+
+Reserved for the R2 contract abstraction reform follow-up
+(`Contract<B: Backend>` wrapping the generated circuit shim once the
+wallet+proof+indexer bridge lands). R2-1 (the `Backend` trait + three
+impls) shipped against `0.3.0`; R2-2/R2-3 are deferred per
+[doc/adr/0008-contract-abstraction-reform-deferred.md](doc/adr/0008-contract-abstraction-reform-deferred.md).
+
+## [0.3.0] — 2026-06-25
+
+### Overview
+
+`0.3.0` is the **R1 finish + R2-1 scaffold** release. It closes the
+two `0.2.0`-deferred steps (4b/4c) and lands R2-1 (Backend trait
+scaffold) while explicitly deferring R2-2/R2-3 to a future release
+(see ADR 0008). Wire format remains byte-identical with the
+TypeScript reference. Public Rust API surface has breaking changes
+per below.
+
+The cycle's codegen-side milestone — `did.compact` compiles
+end-to-end through `compactc --rust` → `cargo check -p
+midnight-did-runtime` clean — also lands here via the bumped compact
+pin (`960fc26`) and the regenerated `contract/generated.rs`.
+
+### Added
+
+- **`midnight_did_runtime::backend`** — `Backend` async trait
+  (`submit_tx`, `read_state`) plus `LiveBackend` (stub — `todo!()`
+  until the wallet+proof+indexer bridge lands), `RecordingBackend`
+  (Mutex-guarded tx + state snapshot for tests), `ResolverBackend`
+  (read-only, rejects `submit_tx`). Forward-compatible scaffold for
+  the R2 contract abstraction reform — not yet a callable surface;
+  consumers continue to use `DidContract` (`midnight-did-api`) until
+  R2-2 lands. See ADR 0008.
+- **Accessor methods** on the now-private struct fields:
+  `PublicKeyJwk::{kty, crv, x, y, extensions}`,
+  `VerificationMethod::{id, type_, controller, public_key_jwk}`,
+  `Service::{id, type_, service_endpoint}`, plus `as_str` /
+  `into_string` on `DidString` / `DidUrl` / `RelativeUrl`.
+
+### Changed
+
+- **R1 step 4b — privatized fields**: `VerificationMethod`,
+  `Service`, `PublicKeyJwk`, `DidString`, `DidUrl`, `RelativeUrl`
+  inner fields are now private. The only way to construct these
+  values is `::new(NewX) -> Result<Self, ValidationError>`; the only
+  way to read them is via accessor methods. Closes the
+  "callers can bypass `::new` by struct-literal construction" hole
+  `0.2.0` left.
+- **R1 step 4c — call-site migration**: the remaining ~17 direct
+  struct-literal construction sites across `midnight-did-api`,
+  `midnight-did-method`, `midnight-did-cli`, and the integration
+  tests are migrated to `::new(NewX)?`. The 4 negative test
+  fixtures that previously asserted on
+  `verification_method_to_ledger`'s rejection path now assert on
+  `PublicKeyJwk::new`'s error path directly (the rejection moved
+  upstream when `::new` became fallible).
+- **`compact_runtime` pin bumped** (`flake.lock` →
+  `yshyn-iohk/compact@960fc26`) — picks up the codegen-rust
+  branch's A18/A19, Bug-1..7, R5a/R5b, and Module-1 closures.
+  `crates/midnight-did-runtime/src/contract/generated.rs` regen
+  output now compiles `cargo check`-clean for the full
+  `did.compact` source.
+
+### Removed
+
+- **R1 step 4c — `create_*` helpers retired**:
+  `create_verification_method(CreateVerificationMethodParams)`,
+  `create_service(CreateServiceParams)`,
+  `CreateVerificationMethodParams`, and `CreateServiceParams` are
+  gone, along with their `pub use` re-exports from
+  `midnight_did_domain::lib`. External callers should switch
+  `create_verification_method(p)` →
+  `VerificationMethod::new(NewVerificationMethod { ... })?`.
+
+### References
+
+- ADR 0008 — R2-2/R2-3 deferred:
+  [doc/adr/0008-contract-abstraction-reform-deferred.md](doc/adr/0008-contract-abstraction-reform-deferred.md)
+- ADR 0005 updated with A1–A19 walker-gap closure log:
+  [doc/adr/0005-codegen-gap-handling.md](doc/adr/0005-codegen-gap-handling.md)
+- Compact codegen-rust branch (cycle's headline milestone):
+  https://github.com/yshyn-iohk/compact/tree/codegen-rust
+
 ## [0.2.0] — 2026-06-23
 
 ### Overview

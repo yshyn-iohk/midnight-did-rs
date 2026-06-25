@@ -2178,7 +2178,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-did"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "midnight-did-api",
  "midnight-did-domain",
@@ -2188,7 +2188,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-did-api"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "hex",
@@ -2202,7 +2202,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-did-cli"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "clap",
@@ -2217,7 +2217,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-did-domain"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "base64 0.22.1",
  "blake2",
@@ -2230,7 +2230,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-did-method"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "blake2",
  "compact-runtime",
@@ -2244,7 +2244,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-did-runtime"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "compact-runtime",
@@ -2261,7 +2261,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-did-uniffi"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "async-trait",
  "hex",
@@ -2591,7 +2591,7 @@ dependencies = [
 
 [[package]]
 name = "midnight-zswap"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "criterion",
  "derive-where",
