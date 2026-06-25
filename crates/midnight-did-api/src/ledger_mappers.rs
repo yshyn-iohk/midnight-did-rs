@@ -236,7 +236,7 @@ pub fn relation_set_from_state(
 mod tests {
     use super::*;
     use midnight_did_domain::did_document::{
-        NewPublicKeyJwk, NewService, NewVerificationMethod, ServiceEndpoint, ServiceType,
+        NewPublicKeyJwk, NewVerificationMethod, ServiceEndpoint, ServiceType,
     };
     use midnight_did_method::midnight_did::{MidnightNetwork, parse_contract_address};
     use midnight_did_runtime::RecordingBackend;

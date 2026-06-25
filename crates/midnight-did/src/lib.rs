@@ -25,7 +25,8 @@
 //! - [`method`](mod@self::method) ([`midnight_did_method`]) — Midnight
 //!   method profile: `did:midnight:*` parsing, network mapping.
 //! - [`api`](mod@self::api) ([`midnight_did_api`]) — async API:
-//!   [`DidContract`] trait, operation builders, resolution.
+//!   operation builders, resolution. Drives `Contract<B>` from the
+//!   runtime crate.
 //! - [`runtime`](mod@self::runtime) ([`midnight_did_runtime`]) — codegen
 //!   target. Behind the `runtime` feature; currently blocked on upstream
 //!   halo2 skew (see ADR 0003).
@@ -53,7 +54,8 @@ pub use midnight_did_domain as domain;
 /// network mapping.
 pub use midnight_did_method as method;
 
-/// Async API: `DidContract` trait, operations, resolution.
+/// Async API: operation builders + resolution. Drives `Contract<B>` from
+/// the runtime crate.
 pub use midnight_did_api as api;
 
 /// Codegen target + concrete contract impls. Behind the `runtime` feature.
@@ -61,6 +63,13 @@ pub use midnight_did_api as api;
 pub use midnight_did_runtime as runtime;
 
 // Convenience flat re-exports of the most-used types.
-pub use midnight_did_api::{ApiError, DidContract};
+pub use midnight_did_api::ApiError;
 pub use midnight_did_domain::DidDocument;
 pub use midnight_did_method::midnight_did::{MidnightDidString, MidnightNetwork, MidnightSubjectId};
+
+// `Contract<B>` is the v0.4.0 operation-driver shape. Re-export from the
+// runtime crate so downstream consumers can pull it in via the umbrella
+// without an explicit runtime dep. Behind the same `runtime` feature so
+// resolver-only consumers keep their slim dep cone.
+#[cfg(feature = "runtime")]
+pub use midnight_did_runtime::{Contract, RecordingBackend};

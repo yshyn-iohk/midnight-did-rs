@@ -33,7 +33,6 @@ use midnight_did_api::{
     contract::{
         DidLedgerSnapshot, JubjubPointHex, LedgerVerificationMethodRelation, MapMutation, SchnorrJubjubSignature,
         SetMutation,
-        mock::{RecordedCall, RecordingContract},
     },
     error::ApiError,
     ledger_mappers::SchnorrJubjubVerificationMethod,
@@ -51,16 +50,25 @@ use midnight_did_domain::{
         VerificationMethodRelation, VerificationMethodType,
     },
 };
-use midnight_did_method::midnight_did::MidnightNetwork;
+use midnight_did_method::midnight_did::{MidnightNetwork, parse_contract_address};
+use midnight_did_runtime::{Contract, DidContractCall, RecordingBackend};
 
 const ADDR: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
-fn contract() -> RecordingContract {
-    RecordingContract::new(ADDR, MidnightNetwork::Undeployed)
+fn contract() -> Contract<RecordingBackend> {
+    Contract::new(
+        RecordingBackend::new(),
+        parse_contract_address(ADDR).unwrap(),
+        MidnightNetwork::Undeployed,
+    )
 }
 
-fn contract_with_ledger(ledger: DidLedgerSnapshot) -> RecordingContract {
-    RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, ledger)
+fn contract_with_ledger(ledger: DidLedgerSnapshot) -> Contract<RecordingBackend> {
+    Contract::new(
+        RecordingBackend::with_snapshot(ledger),
+        parse_contract_address(ADDR).unwrap(),
+        MidnightNetwork::Undeployed,
+    )
 }
 
 fn did_subject() -> String {
@@ -101,11 +109,11 @@ async fn verifies_schnorr_jubjub_signature_with_normalized_method_id() {
         .await
         .expect("verify ok");
 
-    let calls = c.calls();
+    let calls = c.backend.recorded_calls();
     let recorded = calls
         .iter()
         .find_map(|call| match call {
-            RecordedCall::VerifySchnorrJubjubDigestSignature(id, d, s) => Some((id, d, s)),
+            DidContractCall::VerifySchnorrJubjubDigestSignature { method_id: id, digest: d, signature: s } => Some((id, d, s)),
             _ => None,
         })
         .expect("recorded verify call");
@@ -125,9 +133,9 @@ async fn add_verification_method_records_insert_with_normalized_id() {
     add_verification_method(&c, &ed25519_vm("key-add"))
         .await
         .expect("add ok");
-    let calls = c.calls();
+    let calls = c.backend.recorded_calls();
     match &calls[..] {
-        [RecordedCall::SetVerificationMethod(ledger, MapMutation::Insert)] => {
+        [DidContractCall::SetVerificationMethod { method: ledger, mutation: MapMutation::Insert }] => {
             assert_eq!(ledger.id, "#key-add");
             assert_eq!(ledger.typ, VerificationMethodType::JsonWebKey);
             assert_eq!(ledger.public_key_jwk.kty, KeyType::OKP);
@@ -144,9 +152,9 @@ async fn update_verification_method_records_update() {
     update_verification_method(&c, &ed25519_vm("key-update"))
         .await
         .expect("update ok");
-    let calls = c.calls();
+    let calls = c.backend.recorded_calls();
     match &calls[..] {
-        [RecordedCall::SetVerificationMethod(ledger, MapMutation::Update)] => {
+        [DidContractCall::SetVerificationMethod { method: ledger, mutation: MapMutation::Update }] => {
             assert_eq!(ledger.id, "#key-update");
         }
         other => panic!("unexpected recorded calls: {other:?}"),
@@ -163,15 +171,15 @@ async fn remove_verification_method_purges_then_removes() {
 
     remove_verification_method(&c, "key-rm").await.expect("remove ok");
 
-    let calls = c.calls();
+    let calls = c.backend.recorded_calls();
     // Expect: read_ledger, two remove-relation calls (only on the ones present),
     // then the final remove-vm.
-    assert!(matches!(calls[0], RecordedCall::ReadLedger), "{:?}", calls);
+    assert!(matches!(calls[0], DidContractCall::ReadLedger), "{:?}", calls);
 
     let relation_removes: Vec<_> = calls
         .iter()
         .filter_map(|c| match c {
-            RecordedCall::SetVerificationMethodRelation(rel, id, SetMutation::Remove) => Some((*rel, id.clone())),
+            DidContractCall::SetVerificationMethodRelation { relation: rel, method_id: id, mutation: SetMutation::Remove } => Some((*rel, id.clone())),
             _ => None,
         })
         .collect();
@@ -188,7 +196,7 @@ async fn remove_verification_method_purges_then_removes() {
     );
 
     assert!(
-        matches!(calls.last(), Some(RecordedCall::RemoveVerificationMethod(id)) if id == "#key-rm"),
+        matches!(calls.last(), Some(DidContractCall::RemoveVerificationMethod { method_id: id }) if id == "#key-rm"),
         "{:?}",
         calls
     );
@@ -201,10 +209,10 @@ async fn remove_verification_method_skips_relations_it_does_not_belong_to() {
     ledger.authentication_relation.push("#key-solo".into());
     let c = contract_with_ledger(ledger);
     remove_verification_method(&c, "key-solo").await.expect("remove ok");
-    let calls = c.calls();
+    let calls = c.backend.recorded_calls();
     let removes: Vec<_> = calls
         .iter()
-        .filter(|c| matches!(c, RecordedCall::SetVerificationMethodRelation(_, _, _)))
+        .filter(|c| matches!(c, DidContractCall::SetVerificationMethodRelation { relation: _, method_id: _, mutation: _ }))
         .collect();
     assert_eq!(removes.len(), 1, "expected one relation purge, got: {removes:?}");
 }
@@ -223,11 +231,11 @@ async fn add_schnorr_jubjub_verification_method_records_insert() {
         },
     };
     add_schnorr_jubjub_verification_method(&c, &vm).await.expect("add ok");
-    let calls = c.calls();
+    let calls = c.backend.recorded_calls();
     assert!(
         matches!(
             &calls[..],
-            [RecordedCall::SetSchnorrJubjubVerificationMethod(ledger, MapMutation::Insert)]
+            [DidContractCall::SetSchnorrJubjubVerificationMethod { method: ledger, mutation: MapMutation::Insert }]
                 if ledger.id == "#key-sj"
         ),
         "{:?}",
@@ -243,11 +251,11 @@ async fn remove_schnorr_jubjub_verification_method_purges_then_removes() {
     remove_schnorr_jubjub_verification_method(&c, "key-sj")
         .await
         .expect("remove ok");
-    let calls = c.calls();
-    assert!(matches!(calls[0], RecordedCall::ReadLedger));
+    let calls = c.backend.recorded_calls();
+    assert!(matches!(calls[0], DidContractCall::ReadLedger));
     assert!(matches!(
         calls.last(),
-        Some(RecordedCall::RemoveSchnorrJubjubVerificationMethod(id)) if id == "#key-sj"
+        Some(DidContractCall::RemoveSchnorrJubjubVerificationMethod { method_id: id }) if id == "#key-sj"
     ));
 }
 

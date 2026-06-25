@@ -30,6 +30,11 @@ use std::sync::Mutex;
 use async_trait::async_trait;
 use compact_runtime::{empty_charged_state, ChargedState, DefaultDB};
 
+// Re-export the upstream raw-state types under the backend module so
+// downstream consumers (api-layer tests, future custom backends) can
+// implement `Backend` without taking a direct `compact-runtime` dep.
+pub use compact_runtime::{ChargedState as RawChargedState, DefaultDB as RawDb};
+
 use crate::contract_call::{DidContractCall, DidLedgerSnapshot};
 
 /// A transaction built and proven by the upstream wallet + proof stack,

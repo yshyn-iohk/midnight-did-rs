@@ -17,12 +17,7 @@
 //!
 //! Rust port of `packages/api/src/test/controller-operations.test.ts`.
 //!
-//! Notes on porting:
-//!
-//! - The TS source accepts `Uint8Array` and rejects non-32-byte inputs at
-//!   runtime; the Rust signature uses `[u8; 32]` so the length check is a
-//!   compile-time guarantee. We retain the rest of the behavioural
-//!   coverage:
+//! Behavioural coverage retained from the TS source:
 //!   - happy path: pending slot is written before the rotation circuit, the
 //!     circuit is invoked with the derived public key, the active slot is
 //!     written after the circuit succeeds, and the pending slot is cleared.
@@ -33,19 +28,14 @@
 //!   - circuit success + active promotion failure -> caller sees
 //!     `ControllerRotationOrphaned`; the pending slot is NOT cleared.
 //!
-//! The mock contract is the workspace `RecordingContract`; the failing
-//! contract + failing store are small local doubles below.
+//! v0.4.0: the mock contract is `Contract<RecordingBackend>`; the failing
+//! contract is `Contract<FailingBackend>` where `FailingBackend` is a
+//! purpose-built `Backend` impl whose `submit_tx` always errors.
 
 use std::sync::Mutex;
 
 use async_trait::async_trait;
 use midnight_did_api::{
-    contract::{
-        DidContract, DidLedgerSnapshot, FinalizedTxData, LedgerSchnorrJubjubVerificationMethod, LedgerService,
-        LedgerVerificationMethod, LedgerVerificationMethodRelation, MapMutation, SchnorrJubjubDigest,
-        SchnorrJubjubSignature, SetMutation,
-        mock::{RecordedCall, RecordingContract},
-    },
     controller_operations::rotate_controller_key,
     error::{ApiError, ContractError},
     private_state::{
@@ -53,9 +43,20 @@ use midnight_did_api::{
         restore_private_state,
     },
 };
-use midnight_did_method::midnight_did::MidnightNetwork;
+use midnight_did_method::midnight_did::{MidnightNetwork, parse_contract_address};
+use midnight_did_runtime::{
+    Backend, BackendError, BuiltTx, Contract, DidContractCall, DidLedgerSnapshot, FinalizedTxData, RecordingBackend,
+};
 
 const ADDR: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+
+fn recording_contract() -> Contract<RecordingBackend> {
+    Contract::new(
+        RecordingBackend::new(),
+        parse_contract_address(ADDR).unwrap(),
+        MidnightNetwork::Undeployed,
+    )
+}
 
 // ---------------------------------------------------------------------------
 // TS: "rotates to a locally derived controller public key and stores the
@@ -63,7 +64,7 @@ const ADDR: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789ab
 // ---------------------------------------------------------------------------
 #[tokio::test]
 async fn rotates_and_promotes_private_state() {
-    let contract = RecordingContract::new(ADDR, MidnightNetwork::Undeployed);
+    let contract = recording_contract();
     let store = InMemoryPrivateStateStore::new();
     let new_sk = [4u8; 32];
     let new_pk = [9u8; 32];
@@ -72,9 +73,9 @@ async fn rotates_and_promotes_private_state() {
         .await
         .expect("rotate ok");
 
-    let calls = contract.calls();
+    let calls = contract.backend.recorded_calls();
     assert!(
-        matches!(calls.first(), Some(RecordedCall::RotateControllerKey(pk)) if *pk == new_pk),
+        matches!(calls.first(), Some(DidContractCall::RotateControllerKey { new_public_key: pk }) if *pk == new_pk),
         "expected RotateControllerKey({new_pk:?}), got {calls:?}"
     );
 
@@ -90,7 +91,7 @@ async fn rotates_and_promotes_private_state() {
 // ---------------------------------------------------------------------------
 #[tokio::test]
 async fn surfaces_storage_failure_before_invoking_circuit() {
-    let contract = RecordingContract::new(ADDR, MidnightNetwork::Undeployed);
+    let contract = recording_contract();
     let store = FailingStore::new(FailMode::FailOnEverySet);
 
     let err = rotate_controller_key(&contract, &store, [1u8; 32], [2u8; 32])
@@ -98,9 +99,9 @@ async fn surfaces_storage_failure_before_invoking_circuit() {
         .unwrap_err();
     assert!(matches!(err, ApiError::InvalidArgument(_)), "{err}");
 
-    let calls = contract.calls();
+    let calls = contract.backend.recorded_calls();
     assert!(
-        !calls.iter().any(|c| matches!(c, RecordedCall::RotateControllerKey(_))),
+        !calls.iter().any(|c| matches!(c, DidContractCall::RotateControllerKey { .. })),
         "circuit must not run when pending write fails first: {calls:?}"
     );
 }
@@ -110,7 +111,11 @@ async fn surfaces_storage_failure_before_invoking_circuit() {
 // ---------------------------------------------------------------------------
 #[tokio::test]
 async fn clears_pending_state_when_circuit_fails() {
-    let contract = FailingContract::new();
+    let contract = Contract::new(
+        FailingBackend::new(),
+        parse_contract_address(ADDR).unwrap(),
+        MidnightNetwork::Undeployed,
+    );
     let store = InMemoryPrivateStateStore::new();
 
     let err = rotate_controller_key(&contract, &store, [2u8; 32], [3u8; 32])
@@ -128,7 +133,7 @@ async fn clears_pending_state_when_circuit_fails() {
 // ---------------------------------------------------------------------------
 #[tokio::test]
 async fn keeps_pending_when_active_promotion_fails() {
-    let contract = RecordingContract::new(ADDR, MidnightNetwork::Undeployed);
+    let contract = recording_contract();
     let store = FailingStore::new(FailMode::FailOnNthSet { fail_on: 2 });
 
     let err = rotate_controller_key(&contract, &store, [3u8; 32], [4u8; 32])
@@ -146,12 +151,21 @@ async fn keeps_pending_when_active_promotion_fails() {
     assert_eq!(pending.secret_key, [3u8; 32]);
     // The circuit ran exactly once.
     let circuit_calls: Vec<_> = contract
-        .calls()
+        .backend
+        .recorded_calls()
         .iter()
-        .filter(|c| matches!(c, RecordedCall::RotateControllerKey(_)))
+        .filter(|c| matches!(c, DidContractCall::RotateControllerKey { .. }))
         .cloned()
         .collect();
     assert_eq!(circuit_calls.len(), 1, "circuit should run once: {:?}", circuit_calls);
+}
+
+// silence dead_code for the unused ContractError import — kept so callers
+// can assert on `ApiError::Contract(ContractError::Failed(_))` semantics if
+// they extend this file.
+#[allow(dead_code)]
+fn _force_contract_error_usage() -> ContractError {
+    ContractError::Failed("placeholder".into())
 }
 
 // ===========================================================================
@@ -224,98 +238,34 @@ impl PrivateStateStore for FailingStore {
     }
 }
 
-/// A `DidContract` whose `rotate_controller_key` always fails. All other
-/// methods are unused by the controller tests; their bodies panic so an
-/// accidentally-extended test catches the missing implementation early.
-struct FailingContract;
+/// A `Backend` whose `submit_tx` always returns an error. Replaces the
+/// pre-v0.4.0 `FailingContract` impl of the deleted `DidContract` trait.
+///
+/// Custom backends use the `RawChargedState` + `RawDb` re-exports from
+/// the runtime crate so api-level callers do not need a direct
+/// `compact-runtime` dep just to satisfy the `Backend::read_state`
+/// signature.
+struct FailingBackend;
 
-impl FailingContract {
+impl FailingBackend {
     fn new() -> Self {
         Self
     }
 }
 
 #[async_trait]
-impl DidContract for FailingContract {
-    fn contract_address(&self) -> String {
-        ADDR.to_owned()
+impl Backend for FailingBackend {
+    async fn submit_tx(&self, _tx: BuiltTx) -> Result<FinalizedTxData, BackendError> {
+        Err(BackendError::Other("transaction rejected".into()))
     }
 
-    fn network(&self) -> MidnightNetwork {
-        MidnightNetwork::Undeployed
+    async fn read_state(
+        &self,
+    ) -> Result<midnight_did_runtime::backend::RawChargedState<midnight_did_runtime::backend::RawDb>, BackendError> {
+        unimplemented!("not used by controller tests")
     }
 
-    async fn read_ledger(&self) -> Result<DidLedgerSnapshot, ContractError> {
+    async fn read_snapshot(&self) -> Result<DidLedgerSnapshot, BackendError> {
         Ok(DidLedgerSnapshot::default())
-    }
-
-    async fn rotate_controller_key(&self, _new_pk: [u8; 32]) -> Result<FinalizedTxData, ContractError> {
-        Err(ContractError::Failed("transaction rejected".into()))
-    }
-
-    async fn set_verification_method(
-        &self,
-        _method: LedgerVerificationMethod,
-        _mutation: MapMutation,
-    ) -> Result<FinalizedTxData, ContractError> {
-        unimplemented!("not used by controller tests")
-    }
-
-    async fn remove_verification_method(&self, _id: String) -> Result<FinalizedTxData, ContractError> {
-        unimplemented!("not used by controller tests")
-    }
-
-    async fn set_schnorr_jubjub_verification_method(
-        &self,
-        _method: LedgerSchnorrJubjubVerificationMethod,
-        _mutation: MapMutation,
-    ) -> Result<FinalizedTxData, ContractError> {
-        unimplemented!("not used by controller tests")
-    }
-
-    async fn remove_schnorr_jubjub_verification_method(&self, _id: String) -> Result<FinalizedTxData, ContractError> {
-        unimplemented!("not used by controller tests")
-    }
-
-    async fn verify_schnorr_jubjub_digest_signature(
-        &self,
-        _id: String,
-        _digest: SchnorrJubjubDigest,
-        _signature: SchnorrJubjubSignature,
-    ) -> Result<FinalizedTxData, ContractError> {
-        unimplemented!("not used by controller tests")
-    }
-
-    async fn set_verification_method_relation(
-        &self,
-        _relation: LedgerVerificationMethodRelation,
-        _id: String,
-        _mutation: SetMutation,
-    ) -> Result<FinalizedTxData, ContractError> {
-        unimplemented!("not used by controller tests")
-    }
-
-    async fn set_service(
-        &self,
-        _service: LedgerService,
-        _mutation: MapMutation,
-    ) -> Result<FinalizedTxData, ContractError> {
-        unimplemented!("not used by controller tests")
-    }
-
-    async fn remove_service(&self, _id: String) -> Result<FinalizedTxData, ContractError> {
-        unimplemented!("not used by controller tests")
-    }
-
-    async fn set_also_known_as(
-        &self,
-        _alias: String,
-        _mutation: SetMutation,
-    ) -> Result<FinalizedTxData, ContractError> {
-        unimplemented!("not used by controller tests")
-    }
-
-    async fn deactivate(&self) -> Result<FinalizedTxData, ContractError> {
-        unimplemented!("not used by controller tests")
     }
 }

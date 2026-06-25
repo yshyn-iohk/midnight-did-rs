@@ -45,7 +45,6 @@ use midnight_did_api::{
     contract::{
         DidLedgerSnapshot, JubjubPointHex, LedgerPublicKeyJwk, LedgerSchnorrJubjubVerificationMethod, LedgerService,
         LedgerVerificationMethod,
-        mock::{RecordedCall, RecordingContract},
     },
     controller_operations::rotate_controller_key,
     did_operations::create_did,
@@ -66,7 +65,18 @@ use midnight_did_domain::{
         ServiceType, VerificationMethod, VerificationMethodRelation, VerificationMethodType,
     },
 };
-use midnight_did_method::midnight_did::MidnightNetwork;
+use midnight_did_method::midnight_did::{MidnightNetwork, parse_contract_address};
+use midnight_did_runtime::{Contract, DidContractCall, RecordingBackend};
+
+/// Build a `Contract<RecordingBackend>` seeded with `ledger` — replaces the
+/// legacy `RecordingContract::with_ledger(ADDR, network, ledger)` ergonomic.
+fn contract_with(network: MidnightNetwork, ledger: DidLedgerSnapshot) -> Contract<RecordingBackend> {
+    Contract::new(
+        RecordingBackend::with_snapshot(ledger),
+        parse_contract_address(ADDR).unwrap(),
+        network,
+    )
+}
 
 const ADDR: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
@@ -149,7 +159,7 @@ fn vm_added_ledger() -> DidLedgerSnapshot {
 /// ledger -> initial DID Document fixture.
 #[tokio::test]
 async fn initial_state_matches_ts_fixture() {
-    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, initial_ledger());
+    let contract = contract_with(MidnightNetwork::Undeployed, initial_ledger());
     let resolved = resolve(&contract).await.unwrap().expect("resolves");
 
     let actual = serde_json::json!({
@@ -169,7 +179,7 @@ async fn initial_state_matches_ts_fixture() {
 /// contexts; only metadata (`versionId`, `updated`) advances.
 #[tokio::test]
 async fn after_rotate_controller_key_matches_ts_fixture() {
-    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, initial_ledger());
+    let contract = contract_with(MidnightNetwork::Undeployed, initial_ledger());
     let store = InMemoryPrivateStateStore::new();
 
     // Seed the controller secret + drive a rotate. The mock contract does not
@@ -180,7 +190,7 @@ async fn after_rotate_controller_key_matches_ts_fixture() {
     rotate_controller_key(&contract, &store, [2u8; 32], [0xffu8; 32])
         .await
         .unwrap();
-    contract.set_ledger(rotated_ledger());
+    contract.backend.set_snapshot(rotated_ledger());
 
     let resolved = resolve(&contract).await.unwrap().expect("resolves");
     let actual = serde_json::json!({
@@ -195,7 +205,7 @@ async fn after_rotate_controller_key_matches_ts_fixture() {
 /// array with the inserted entry, controller / contexts unchanged.
 #[tokio::test]
 async fn after_set_verification_method_matches_ts_fixture() {
-    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, initial_ledger());
+    let contract = contract_with(MidnightNetwork::Undeployed, initial_ledger());
 
     let coord = encode_base64url(&[0u8; 32]);
     let vm = VerificationMethod::new(NewVerificationMethod {
@@ -215,7 +225,7 @@ async fn after_set_verification_method_matches_ts_fixture() {
 
     add_verification_method(&contract, &vm).await.expect("add ok");
     // Replace ledger to reflect the insertion (mock contract is recording-only).
-    contract.set_ledger(vm_added_ledger());
+    contract.backend.set_snapshot(vm_added_ledger());
 
     let resolved = resolve(&contract).await.unwrap().expect("resolves");
     let actual = serde_json::json!({
@@ -235,7 +245,7 @@ async fn after_set_verification_method_matches_ts_fixture() {
 /// active slot and the resolver returns the empty initial document.
 #[tokio::test]
 async fn create_did_seeds_active_slot_and_resolves_empty_document() {
-    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, initial_ledger());
+    let contract = contract_with(MidnightNetwork::Undeployed, initial_ledger());
     let store = InMemoryPrivateStateStore::new();
     let secret_key = [7u8; 32];
 
@@ -257,7 +267,7 @@ async fn create_did_seeds_active_slot_and_resolves_empty_document() {
 /// "should rotate the controller key and keep subsequent updates authorized"
 #[tokio::test]
 async fn rotate_controller_key_then_add_and_remove_aka() {
-    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, initial_ledger());
+    let contract = contract_with(MidnightNetwork::Undeployed, initial_ledger());
     let store = InMemoryPrivateStateStore::new();
 
     create_did(&contract, &store, [1u8; 32]).await.unwrap();
@@ -284,7 +294,7 @@ async fn rotate_controller_key_then_add_and_remove_aka() {
 /// 1.0 specification in the `@context` property"
 #[tokio::test]
 async fn resolved_document_carries_w3c_contexts() {
-    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, initial_ledger());
+    let contract = contract_with(MidnightNetwork::Undeployed, initial_ledger());
     let resolved = resolve(&contract).await.unwrap().expect("resolves");
     let json = serde_json::to_value(&resolved.did_document).unwrap();
     let ctx = json.get("@context").expect("@context present");
@@ -303,7 +313,7 @@ async fn resolved_document_carries_w3c_contexts() {
 /// `did:midnight:<network_id>:<contract_address>`"
 #[tokio::test]
 async fn resolved_document_id_uses_canonical_midnight_did_format() {
-    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Testnet, initial_ledger());
+    let contract = contract_with(MidnightNetwork::Testnet, initial_ledger());
     let resolved = resolve(&contract).await.unwrap().expect("resolves");
     assert_eq!(resolved.did_document.id.as_str(), format!("did:midnight:testnet:{ADDR}"));
 }
@@ -311,7 +321,7 @@ async fn resolved_document_id_uses_canonical_midnight_did_format() {
 /// "should surface DID Document metadata with version and activation state"
 #[tokio::test]
 async fn resolved_document_metadata_has_version_and_timestamp() {
-    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, initial_ledger());
+    let contract = contract_with(MidnightNetwork::Undeployed, initial_ledger());
     let resolved = resolve(&contract).await.unwrap().expect("resolves");
     let meta = resolved.did_document_metadata;
     assert_eq!(meta.version_id.as_deref(), Some("1"));
@@ -327,7 +337,7 @@ async fn resolved_document_metadata_has_version_and_timestamp() {
 /// "should add the verification method with JsonWebKey public key"
 #[tokio::test]
 async fn add_verification_method_records_insert_and_resolves() {
-    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, initial_ledger());
+    let contract = contract_with(MidnightNetwork::Undeployed, initial_ledger());
 
     let coord = encode_base64url(&[0u8; 32]);
     let vm = VerificationMethod::new(NewVerificationMethod {
@@ -347,10 +357,10 @@ async fn add_verification_method_records_insert_and_resolves() {
     add_verification_method(&contract, &vm).await.unwrap();
 
     let recorded = contract
-        .calls()
+        .backend.recorded_calls()
         .into_iter()
         .find_map(|c| match c {
-            RecordedCall::SetVerificationMethod(ledger, _) => Some(ledger),
+            DidContractCall::SetVerificationMethod { method: ledger, mutation: _ } => Some(ledger),
             _ => None,
         })
         .expect("set-vm call recorded");
@@ -363,7 +373,7 @@ async fn add_verification_method_records_insert_and_resolves() {
 /// "should update the DID by removing the service using its `id`"
 #[tokio::test]
 async fn add_then_remove_service_records_expected_calls() {
-    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, initial_ledger());
+    let contract = contract_with(MidnightNetwork::Undeployed, initial_ledger());
     let svc = Service::new(NewService {
         id: "service-1".into(),
         type_: ServiceType::One("DIDCommV2".into()),
@@ -376,17 +386,17 @@ async fn add_then_remove_service_records_expected_calls() {
     add_service(&contract, &svc).await.unwrap();
     remove_service(&contract, "service-1").await.unwrap();
 
-    let calls = contract.calls();
+    let calls = contract.backend.recorded_calls();
     assert!(
         calls
             .iter()
-            .any(|c| matches!(c, RecordedCall::SetService(s, _) if s.id == "#service-1")),
+            .any(|c| matches!(c, DidContractCall::SetService { service: s, mutation: _ } if s.id == "#service-1")),
         "{calls:?}"
     );
     assert!(
         calls
             .iter()
-            .any(|c| matches!(c, RecordedCall::RemoveService(id) if id == "#service-1")),
+            .any(|c| matches!(c, DidContractCall::RemoveService { service_id: id } if id == "#service-1")),
         "{calls:?}"
     );
 }
@@ -394,13 +404,13 @@ async fn add_then_remove_service_records_expected_calls() {
 /// "should add alsoKnownAs alias" + reject branches.
 #[tokio::test]
 async fn add_also_known_as_records_set_call_and_rejects_invalid_uris() {
-    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, initial_ledger());
+    let contract = contract_with(MidnightNetwork::Undeployed, initial_ledger());
     add_also_known_as(&contract, "did:example:aka-1").await.unwrap();
-    let calls = contract.calls();
+    let calls = contract.backend.recorded_calls();
     assert!(
         calls
             .iter()
-            .any(|c| matches!(c, RecordedCall::SetAlsoKnownAs(uri, _) if uri == "did:example:aka-1")),
+            .any(|c| matches!(c, DidContractCall::SetAlsoKnownAs { alias_uri: uri, mutation: _ } if uri == "did:example:aka-1")),
         "{calls:?}"
     );
 
@@ -415,19 +425,19 @@ async fn add_also_known_as_records_set_call_and_rejects_invalid_uris() {
 /// "should deactivate the DID"
 #[tokio::test]
 async fn deactivate_records_call_and_metadata_reflects_state() {
-    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, initial_ledger());
+    let contract = contract_with(MidnightNetwork::Undeployed, initial_ledger());
     deactivate(&contract).await.unwrap();
     assert!(
-        contract.calls().iter().any(|c| matches!(c, RecordedCall::Deactivate)),
+        contract.backend.recorded_calls().iter().any(|c| matches!(c, DidContractCall::Deactivate)),
         "{:?}",
-        contract.calls()
+        contract.backend.recorded_calls()
     );
 
     // Now install a "deactivated" ledger and confirm metadata reflects it.
     let mut deactivated_ledger = initial_ledger();
     deactivated_ledger.deactivated = true;
     deactivated_ledger.active = false;
-    contract.set_ledger(deactivated_ledger);
+    contract.backend.set_snapshot(deactivated_ledger);
 
     let resolved = resolve(&contract).await.unwrap().expect("resolves");
     assert_eq!(resolved.did_document_metadata.deactivated, Some(true));
@@ -493,6 +503,7 @@ fn vm_key_1_ed25519_ledger() -> LedgerVerificationMethod {
     }
 }
 
+#[allow(dead_code)]
 fn vm_key_1_ed25519_domain() -> VerificationMethod {
     VerificationMethod::new(NewVerificationMethod {
         id: format!("{}#key-1", did_subject()),
@@ -518,7 +529,7 @@ fn vm_key_1_ed25519_domain() -> VerificationMethod {
 /// case after the ledger reflects one inserted alias.
 #[tokio::test]
 async fn after_set_aka_insert_matches_ts_fixture() {
-    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, initial_ledger());
+    let contract = contract_with(MidnightNetwork::Undeployed, initial_ledger());
     add_also_known_as(&contract, "did:example:aka-1").await.unwrap();
 
     let mut post = initial_ledger();
@@ -526,7 +537,7 @@ async fn after_set_aka_insert_matches_ts_fixture() {
     post.version = 2;
     post.operation_count = 1;
     post.updated_ms = 1_700_002_800_000; // 2023-11-14T23:00:00Z
-    contract.set_ledger(post);
+    contract.backend.set_snapshot(post);
 
     let resolved = resolve(&contract).await.unwrap().expect("resolves");
     let actual = serde_json::json!({
@@ -542,7 +553,7 @@ async fn after_set_aka_insert_matches_ts_fixture() {
 /// empty sets) and `versionId` advances to 3.
 #[tokio::test]
 async fn after_set_aka_remove_matches_ts_fixture() {
-    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, {
+    let contract = contract_with(MidnightNetwork::Undeployed, {
         let mut s = initial_ledger();
         s.also_known_as = vec!["did:example:aka-1".into()];
         s.version = 2;
@@ -554,7 +565,7 @@ async fn after_set_aka_remove_matches_ts_fixture() {
     post.version = 3;
     post.operation_count = 2;
     post.updated_ms = 1_700_003_700_000; // 2023-11-14T23:15:00Z
-    contract.set_ledger(post);
+    contract.backend.set_snapshot(post);
 
     let resolved = resolve(&contract).await.unwrap().expect("resolves");
     let actual = serde_json::json!({
@@ -578,7 +589,7 @@ async fn after_set_vm_update_matches_ts_fixture() {
         .insert("#key-1".into(), vm_key_1_ed25519_ledger());
     pre.version = 3;
     pre.operation_count = 2;
-    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, pre);
+    let contract = contract_with(MidnightNetwork::Undeployed, pre);
 
     // Update: same id, new coord bytes (0x77…).
     let new_x = encode_base64url(&[0x77u8; 32]);
@@ -615,7 +626,7 @@ async fn after_set_vm_update_matches_ts_fixture() {
     post.version = 4;
     post.operation_count = 3;
     post.updated_ms = 1_700_002_800_000;
-    contract.set_ledger(post);
+    contract.backend.set_snapshot(post);
 
     let resolved = resolve(&contract).await.unwrap().expect("resolves");
     let actual = serde_json::json!({
@@ -637,7 +648,7 @@ async fn after_remove_vm_matches_ts_fixture() {
     pre.authentication_relation = vec!["#key-1".into()];
     pre.version = 4;
     pre.operation_count = 3;
-    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, pre);
+    let contract = contract_with(MidnightNetwork::Undeployed, pre);
 
     remove_verification_method(&contract, "#key-1").await.unwrap();
 
@@ -645,7 +656,7 @@ async fn after_remove_vm_matches_ts_fixture() {
     post.version = 5;
     post.operation_count = 5; // relation purge + remove vm
     post.updated_ms = 1_700_003_700_000;
-    contract.set_ledger(post);
+    contract.backend.set_snapshot(post);
 
     let resolved = resolve(&contract).await.unwrap().expect("resolves");
     let actual = serde_json::json!({
@@ -666,7 +677,7 @@ async fn after_remove_vm_matches_ts_fixture() {
 /// right-padded to 32 bytes then base64url-encoded.
 #[tokio::test]
 async fn after_set_schnorr_jubjub_vm_insert_matches_ts_fixture() {
-    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, initial_ledger());
+    let contract = contract_with(MidnightNetwork::Undeployed, initial_ledger());
 
     let vm = SchnorrJubjubVerificationMethod {
         id: "#jub-1".into(),
@@ -691,7 +702,7 @@ async fn after_set_schnorr_jubjub_vm_insert_matches_ts_fixture() {
     post.version = 2;
     post.operation_count = 1;
     post.updated_ms = 1_700_002_800_000;
-    contract.set_ledger(post);
+    contract.backend.set_snapshot(post);
 
     let resolved = resolve(&contract).await.unwrap().expect("resolves");
     let actual = serde_json::json!({
@@ -718,7 +729,7 @@ async fn after_remove_schnorr_jubjub_vm_matches_ts_fixture() {
     );
     pre.version = 2;
     pre.operation_count = 1;
-    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, pre);
+    let contract = contract_with(MidnightNetwork::Undeployed, pre);
 
     remove_schnorr_jubjub_verification_method(&contract, "#jub-1")
         .await
@@ -728,7 +739,7 @@ async fn after_remove_schnorr_jubjub_vm_matches_ts_fixture() {
     post.version = 3;
     post.operation_count = 2;
     post.updated_ms = 1_700_003_700_000;
-    contract.set_ledger(post);
+    contract.backend.set_snapshot(post);
 
     let resolved = resolve(&contract).await.unwrap().expect("resolves");
     let actual = serde_json::json!({
@@ -752,7 +763,7 @@ async fn after_set_vm_relation_insert_matches_ts_fixture() {
         .insert("#key-1".into(), vm_key_1_ed25519_ledger());
     pre.version = 2;
     pre.operation_count = 1;
-    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, pre);
+    let contract = contract_with(MidnightNetwork::Undeployed, pre);
 
     add_verification_method_relation(&contract, VerificationMethodRelation::Authentication, "#key-1")
         .await
@@ -765,7 +776,7 @@ async fn after_set_vm_relation_insert_matches_ts_fixture() {
     post.version = 3;
     post.operation_count = 2;
     post.updated_ms = 1_700_002_800_000;
-    contract.set_ledger(post);
+    contract.backend.set_snapshot(post);
 
     let resolved = resolve(&contract).await.unwrap().expect("resolves");
     let actual = serde_json::json!({
@@ -785,7 +796,7 @@ async fn after_set_vm_relation_insert_matches_ts_fixture() {
 /// string, so the fixture's `serviceEndpoint` is just the URL.
 #[tokio::test]
 async fn after_set_service_insert_matches_ts_fixture() {
-    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, initial_ledger());
+    let contract = contract_with(MidnightNetwork::Undeployed, initial_ledger());
 
     let svc = Service::new(NewService {
         id: "svc-1".into(),
@@ -807,7 +818,7 @@ async fn after_set_service_insert_matches_ts_fixture() {
     post.version = 2;
     post.operation_count = 1;
     post.updated_ms = 1_700_002_800_000;
-    contract.set_ledger(post);
+    contract.backend.set_snapshot(post);
 
     let resolved = resolve(&contract).await.unwrap().expect("resolves");
     let actual = serde_json::json!({
@@ -832,7 +843,7 @@ async fn after_remove_service_matches_ts_fixture() {
     );
     pre.version = 2;
     pre.operation_count = 1;
-    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, pre);
+    let contract = contract_with(MidnightNetwork::Undeployed, pre);
 
     remove_service(&contract, "svc-1").await.unwrap();
 
@@ -840,7 +851,7 @@ async fn after_remove_service_matches_ts_fixture() {
     post.version = 3;
     post.operation_count = 2;
     post.updated_ms = 1_700_003_700_000;
-    contract.set_ledger(post);
+    contract.backend.set_snapshot(post);
 
     let resolved = resolve(&contract).await.unwrap().expect("resolves");
     let actual = serde_json::json!({
@@ -860,7 +871,7 @@ async fn after_remove_service_matches_ts_fixture() {
 /// body itself is unchanged.
 #[tokio::test]
 async fn after_deactivate_matches_ts_fixture() {
-    let contract = RecordingContract::with_ledger(ADDR, MidnightNetwork::Undeployed, initial_ledger());
+    let contract = contract_with(MidnightNetwork::Undeployed, initial_ledger());
     deactivate(&contract).await.unwrap();
 
     let mut post = initial_ledger();
@@ -869,7 +880,7 @@ async fn after_deactivate_matches_ts_fixture() {
     post.version = 2;
     post.operation_count = 1;
     post.updated_ms = 1_700_002_800_000;
-    contract.set_ledger(post);
+    contract.backend.set_snapshot(post);
 
     let resolved = resolve(&contract).await.unwrap().expect("resolves");
     let actual = serde_json::json!({

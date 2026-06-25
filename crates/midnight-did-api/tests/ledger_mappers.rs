@@ -25,7 +25,7 @@
 use std::collections::BTreeMap;
 
 use midnight_did_api::{
-    contract::{DidLedgerSnapshot, LedgerVerificationMethodRelation, mock::RecordingContract},
+    contract::{DidLedgerSnapshot, LedgerVerificationMethodRelation},
     error::ApiError,
     ledger_mappers::{public_key_jwk_to_ledger, relation_set_from_state, verification_method_to_ledger},
 };
@@ -36,7 +36,8 @@ use midnight_did_domain::{
         VerificationMethodRelation, VerificationMethodType,
     },
 };
-use midnight_did_method::midnight_did::MidnightNetwork;
+use midnight_did_method::midnight_did::{MidnightNetwork, parse_contract_address};
+use midnight_did_runtime::{Contract, RecordingBackend};
 
 // Address constant chosen to match the TS test setup (32 bytes hex).
 // The TS source uses `0123…ef` ad infinitum; in Rust the API surface
@@ -45,8 +46,12 @@ use midnight_did_method::midnight_did::MidnightNetwork;
 // ledger-mapper output beyond the fragment normalization step.
 const ADDR: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
-fn contract() -> RecordingContract {
-    RecordingContract::new(ADDR, MidnightNetwork::Undeployed)
+fn contract() -> Contract<RecordingBackend> {
+    Contract::new(
+        RecordingBackend::new(),
+        parse_contract_address(ADDR).unwrap(),
+        MidnightNetwork::Undeployed,
+    )
 }
 
 fn did_subject() -> String {

@@ -14,9 +14,10 @@ name = "midnight-did-cli"
 path = "src/main.rs"
 
 [dependencies]
-midnight-did-domain = { workspace = true }
-midnight-did-method = { workspace = true }
-midnight-did-api    = { workspace = true }
+midnight-did-domain  = { workspace = true }
+midnight-did-method  = { workspace = true }
+midnight-did-api     = { workspace = true }
+midnight-did-runtime = { workspace = true }
 serde      = { workspace = true }
 serde_json = { workspace = true }
 tokio      = { version = "1", features = ["full"] }

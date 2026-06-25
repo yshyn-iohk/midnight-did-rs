@@ -17,31 +17,32 @@
 //!
 //! Foreign callers see a single `DidServiceHandle` class with a `new()`
 //! constructor; behind the FFI boundary the handle holds an
-//! [`Arc<Mutex<RecordingContract>>`][RecordingContract] so concurrent FFI
+//! [`Arc<Mutex<Contract<RecordingBackend>>>`][Contract] so concurrent FFI
 //! calls — particularly Swift's structured concurrency tasks and Kotlin's
 //! coroutines — cannot race on the mock contract's in-memory state.
 
 use std::sync::Arc;
 use tokio::sync::Mutex;
 
-use midnight_did_api::contract::mock::RecordingContract;
-use midnight_did_method::midnight_did::MidnightNetwork;
+use midnight_did_method::midnight_did::{MidnightNetwork, parse_contract_address};
+use midnight_did_runtime::{Contract, RecordingBackend};
 
 /// Default contract address for the mock — same value used by the
 /// integration tests in `midnight-did-api`. Real impls will replace the
-/// inner [`RecordingContract`] with a `compact-runtime`-backed contract.
+/// inner [`Contract<RecordingBackend>`] with a `compact-runtime`-backed
+/// contract.
 const DEFAULT_ADDRESS: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 
 /// FFI-opaque service handle.
 ///
 /// Holds the underlying mock contract behind a [`tokio::sync::Mutex`] so the
 /// async FFI methods can `.lock().await` without blocking the foreign-
-/// language thread pool. Once the runtime crate builds, the inner
-/// [`RecordingContract`] is swapped for an
-/// `Arc<dyn DidContract + Send + Sync>` with no change to the FFI surface.
+/// language thread pool. Once the live wallet bridge lands the inner
+/// `Contract<RecordingBackend>` is swapped for `Contract<LiveBackend>`
+/// with no change to the FFI surface.
 #[derive(uniffi::Object)]
 pub struct DidServiceHandle {
-    pub(crate) contract: Arc<Mutex<RecordingContract>>,
+    pub(crate) contract: Arc<Mutex<Contract<RecordingBackend>>>,
 }
 
 #[uniffi::export]
@@ -50,8 +51,9 @@ impl DidServiceHandle {
     #[uniffi::constructor]
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
-            contract: Arc::new(Mutex::new(RecordingContract::new(
-                DEFAULT_ADDRESS,
+            contract: Arc::new(Mutex::new(Contract::new(
+                RecordingBackend::new(),
+                parse_contract_address(DEFAULT_ADDRESS).expect("valid DEFAULT_ADDRESS"),
                 MidnightNetwork::Testnet,
             ))),
         })

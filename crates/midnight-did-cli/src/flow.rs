@@ -28,7 +28,7 @@ use anyhow::{Context, Result};
 use serde_json::{Value, json};
 
 use midnight_did_api::{
-    contract::{DidLedgerSnapshot, mock::RecordingContract},
+    contract::DidLedgerSnapshot,
     did_operations::{create_did, rotate_did_controller_key},
     document_operations::{add_also_known_as, deactivate},
     ledger_mappers::service_to_ledger,
@@ -38,6 +38,8 @@ use midnight_did_api::{
     verification_method_operations::{add_verification_method, add_verification_method_relation},
 };
 use midnight_did_domain::did_document::VerificationMethodRelation;
+use midnight_did_method::midnight_did::parse_contract_address;
+use midnight_did_runtime::{Contract, RecordingBackend};
 
 use crate::fixtures::{
     self, ALSO_KNOWN_AS_URI, CONTRACT_ADDRESS, CREATED_MS, INITIAL_CONTROLLER_PK_HEX, INITIAL_SECRET_KEY, NETWORK,
@@ -124,7 +126,7 @@ impl Step {
 /// One-stop driver that owns the mock contract + private-state store and
 /// applies pre-computed ledger snapshots between mutations.
 pub struct FlowDriver {
-    contract: RecordingContract,
+    contract: Contract<RecordingBackend>,
     store: InMemoryPrivateStateStore,
     operation_count: u64,
     version: u64,
@@ -135,7 +137,11 @@ impl FlowDriver {
     /// Build a driver seeded with the initial ledger snapshot.
     pub fn new() -> Self {
         Self {
-            contract: RecordingContract::with_ledger(CONTRACT_ADDRESS, NETWORK, initial_ledger()),
+            contract: Contract::new(
+                RecordingBackend::with_snapshot(initial_ledger()),
+                parse_contract_address(CONTRACT_ADDRESS).expect("valid CONTRACT_ADDRESS fixture"),
+                NETWORK,
+            ),
             store: InMemoryPrivateStateStore::new(),
             operation_count: 0,
             version: 1,
@@ -155,12 +161,15 @@ impl FlowDriver {
     where
         F: FnOnce(&mut DidLedgerSnapshot),
     {
-        // Read current state via the trait (also records the call).
-        let mut snapshot = midnight_did_api::contract::DidContract::read_ledger(&self.contract)
+        // Read current state via the backend (also records a synthetic
+        // ReadLedger call).
+        let mut snapshot = self
+            .contract
+            .read_snapshot()
             .await
-            .expect("mock contract read_ledger never fails");
+            .expect("mock backend read_snapshot never fails");
         mutate(&mut snapshot);
-        self.contract.set_ledger(snapshot.clone());
+        self.contract.backend.set_snapshot(snapshot.clone());
         snapshot
     }
 
