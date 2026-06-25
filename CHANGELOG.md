@@ -10,13 +10,99 @@ All notable changes to the `midnight-did-rs` workspace are recorded
 here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 and the project adheres to [SemVer](https://semver.org/).
 
-## [Unreleased] — v0.4.0
+## [Unreleased] — v0.5.0
 
-Reserved for the R2 contract abstraction reform follow-up
-(`Contract<B: Backend>` wrapping the generated circuit shim once the
-wallet+proof+indexer bridge lands). R2-1 (the `Backend` trait + three
-impls) shipped against `0.3.0`; R2-2/R2-3 are deferred per
-[doc/adr/0008-contract-abstraction-reform-deferred.md](doc/adr/0008-contract-abstraction-reform-deferred.md).
+Reserved for the wallet+proof-server+indexer bridge follow-up that
+will turn `LiveBackend::submit_tx` + `LiveBackend::read_snapshot`
+from `todo!()` stubs into production paths. See
+[doc/adr/0008-contract-abstraction-reform.md](doc/adr/0008-contract-abstraction-reform.md)
+("Future work") for the four-step closure plan.
+
+## [0.4.0] — 2026-06-25
+
+### Overview
+
+`0.4.0` is the **R2 contract-abstraction reform** release. The
+12-method `DidContract` async trait + `mock::RecordingContract`
+shim retire, replaced by a concrete `Contract<B: Backend>` wrapper
+in `midnight-did-runtime` plus a 14-variant `DidContractCall` enum
+that flows through `Backend::submit_tx`. Wire format remains
+byte-identical with the TypeScript reference; public Rust API
+surface has breaking changes per below.
+
+R2-2 + R2-3 ship via the **Path 2** strategy (see
+[ADR 0008](doc/adr/0008-contract-abstraction-reform.md)):
+`Contract<B>` encodes typed call variants into `BuiltTx::bytes`
+instead of delegating to `generated::Contract<PS, W>`. The spec's
+original delegation template is gated on the
+wallet+proof-server+indexer bridge (`LiveBackend::submit_tx`
+remains `todo!()`); Path 2 sidesteps that by keeping the public
+Rust API the shape it will be when the bridge lands and routing
+test coverage through `RecordingBackend`.
+
+### Added
+
+- **`midnight_did_runtime::Contract<B: Backend>`** — concrete
+  wrapper struct (12 inherent async methods, one per exported
+  `did.compact` circuit) replacing the trait-erased `&dyn
+  DidContract` seam. Each method builds a typed `DidContractCall`
+  variant, encodes via `bincode`, and submits through the backend.
+- **`midnight_did_runtime::DidContractCall`** — 14-variant tagged
+  enum with `bincode` `encode`/`decode` for transport via
+  `BuiltTx::bytes`. Payload shapes mirror the v0.3.0
+  `RecordedCall::X` variants 1:1 so test migration is mechanical.
+- **`Backend::read_snapshot(&self) -> Result<DidLedgerSnapshot,
+  BackendError>`** — third trait method exposing the high-level
+  api-shape snapshot. `LiveBackend::read_snapshot` is `todo!()`
+  until the `Ledger → DidLedgerSnapshot` adapter lands.
+  `RecordingBackend::with_snapshot(...)` /
+  `ResolverBackend::new(snapshot, ...)` return the configured
+  snapshot.
+- **`RecordingBackend::recorded_calls(&self) -> Vec<DidContractCall>`**
+  — accessor used by the migrated integration tests instead of the
+  deleted `RecordingContract::calls()`.
+
+### Changed
+
+- **All 5 operation-builder modules**
+  (`did_operations`, `controller_operations`,
+  `verification_method_operations`, `service_operations`,
+  `document_operations`) now take `&Contract<B: Backend>` directly.
+  Each previously `<C: DidContract + ?Sized>(contract: &C, ...)`
+  signature is now `<B: Backend>(contract: &Contract<B>, ...)`.
+- **56 integration tests across 4 files** migrated 1:1:
+  `RecordingContract::new(ADDR, NET)` →
+  `Contract::new(RecordingBackend::with_snapshot(snapshot), ADDR,
+  NET)`, `RecordedCall::X(payload)` →
+  `DidContractCall::X { payload fields }`.
+- **`midnight-did-api` depends on `midnight-did-runtime`.** The api
+  crate previously held the contract-abstraction shape
+  (`DidContract` trait); that surface is now in the runtime crate
+  where it belongs.
+
+### Removed
+
+- **`midnight_did_api::contract::DidContract`** async trait
+  (12 methods). Migrate consumers to `Contract<B: Backend>` from
+  `midnight-did-runtime`.
+- **`midnight_did_api::contract::mock::RecordingContract`** mock.
+  Migrate test setups to
+  `Contract::new(RecordingBackend::with_snapshot(...), ...)`.
+- **`midnight_did_api::contract::mock::RecordedCall`** enum.
+  Variants are preserved 1:1 as
+  `midnight_did_runtime::DidContractCall::X { ... }`; matchers
+  switch from `RecordedCall::X(payload)` tuple-pattern to
+  `DidContractCall::X { fields, .. }` struct-pattern.
+
+### References
+
+- ADR 0008 — contract-abstraction reform (Path 2 rationale + future
+  work):
+  [doc/adr/0008-contract-abstraction-reform.md](doc/adr/0008-contract-abstraction-reform.md)
+- R2 design spec:
+  [doc/specs/2026-06-24-r2-contract-abstraction-design.md](doc/specs/2026-06-24-r2-contract-abstraction-design.md)
+- Fully supersedes ADR 0002 (trait-erasure-for-contract):
+  [doc/adr/0002-trait-erasure-for-contract.md](doc/adr/0002-trait-erasure-for-contract.md)
 
 ## [0.3.0] — 2026-06-25
 
