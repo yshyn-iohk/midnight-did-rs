@@ -18,16 +18,15 @@
 //!
 //! This crate is the Rust port of the operation half of the TypeScript
 //! `@midnight-ntwrk/midnight-did-api` package. It sits on top of
-//! [`midnight_did_domain`] and abstracts the on-chain contract behind the
-//! [`contract::DidContract`] trait so the API surface can be built and
-//! unit-tested independently of `midnight-did` (the runtime crate).
+//! [`midnight_did_domain`] and drives the on-chain contract via the
+//! [`midnight_did_runtime::Contract<B>`] wrapper.
 //!
 //! ## Module layout
 //!
-//! - [`contract`] — [`DidContract`](contract::DidContract) trait, ledger
-//!   snapshot view ([`DidLedgerSnapshot`](contract::DidLedgerSnapshot)),
-//!   mutation tags, and a recording mock implementation
-//!   ([`contract::mock::RecordingContract`]).
+//! - [`contract`] — re-exports of the ledger-shape value types
+//!   ([`DidLedgerSnapshot`](contract::DidLedgerSnapshot), mutation tags,
+//!   [`LedgerVerificationMethod`](contract::LedgerVerificationMethod), …)
+//!   from `midnight-did-runtime`.
 //! - [`error`] — top-level [`error::ApiError`].
 //! - [`subject`] — DID subject + bound-fragment-id helpers.
 //! - [`ledger_mappers`] — domain → ledger conversion helpers.
@@ -39,17 +38,15 @@
 //! - [`resolution`] — ledger snapshot → DID Document.
 //! - [`did_operations`] — high-level CRUD aggregations.
 //!
-//! ## Why a trait, not the runtime crate?
+//! ## v0.4.0 contract abstraction
 //!
-//! The codegen-rust toolchain currently has gaps that block the
-//! `midnight-did` runtime crate from building end-to-end (halo2 ParamsKZG
-//! API skew in the Nix-pinned `midnight-transient-crypto` snapshot). To keep
-//! the API layer landing as testable Rust code, this crate depends on
-//! [`midnight_did_domain`] only. The [`contract::DidContract`] trait
-//! supplies a thin abstraction over the impure circuit surface; a real
-//! implementation wraps the runtime when it builds. Until then the
-//! [`contract::mock::RecordingContract`] is enough to drive every
-//! operation-level test.
+//! The pre-v0.4.0 `DidContract` trait + `RecordingContract` mock were
+//! replaced by [`midnight_did_runtime::Contract<B: Backend>`] (see
+//! ADR 0008 — Path 2). The typed
+//! [`midnight_did_runtime::DidContractCall`] envelope serialises into
+//! [`midnight_did_runtime::BuiltTx::bytes`] and is decoded by the
+//! recording backend for tests. The api-layer operation builders now
+//! take `&Contract<B: Backend>` directly.
 
 #![forbid(unsafe_code)]
 #![warn(missing_docs, rust_2018_idioms, clippy::all)]
@@ -77,9 +74,9 @@ pub use midnight_did_method::network_mapping;
 
 // Re-exports — common API surface.
 pub use contract::{
-    DidContract, DidLedgerSnapshot, FinalizedTxData, JubjubPointHex, LedgerPublicKeyJwk,
-    LedgerSchnorrJubjubVerificationMethod, LedgerService, LedgerVerificationMethod, LedgerVerificationMethodRelation,
-    MapMutation, SchnorrJubjubDigest, SchnorrJubjubSignature, SetMutation,
+    DidLedgerSnapshot, FinalizedTxData, JubjubPointHex, LedgerPublicKeyJwk, LedgerSchnorrJubjubVerificationMethod,
+    LedgerService, LedgerVerificationMethod, LedgerVerificationMethodRelation, MapMutation, SchnorrJubjubDigest,
+    SchnorrJubjubSignature, SetMutation,
 };
 pub use error::{ApiError, ContractError};
 pub use ledger_mappers::{
