@@ -193,12 +193,39 @@ pub struct LedgerVerificationMethod {
 /// characters) — that is the on-chain encoding of an outer-curve `Fr` scalar.
 /// Construct via [`JubjubPointHex::new`]; the fields are private to prevent
 /// callers from sidestepping the check.
+///
+/// Decode-side gate: deserialisation routes through
+/// [`JubjubPointHexRepr`] + `TryFrom`, so an incoming `BuiltTx::bytes`
+/// envelope (e.g. via [`crate::backend::RecordingBackend::submit_tx`])
+/// cannot land malformed coordinates into a typed
+/// [`DidContractCall::SetSchnorrJubjubVerificationMethod`] value. The serde
+/// wire format is unchanged — `JubjubPointHexRepr` mirrors the pre-decode-gate
+/// public layout byte-for-byte.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "JubjubPointHexRepr")]
 pub struct JubjubPointHex {
     /// X coordinate as hex (64 chars).
     x: String,
     /// Y coordinate as hex (64 chars).
     y: String,
+}
+
+/// Serde shim for [`JubjubPointHex`]. Mirrors the pre-decode-gate public
+/// layout so the wire format is byte-identical for valid inputs;
+/// `TryFrom<JubjubPointHexRepr>` delegates to [`JubjubPointHex::new`] so
+/// malformed payloads are rejected at decode time.
+#[derive(Debug, Clone, Deserialize)]
+struct JubjubPointHexRepr {
+    x: String,
+    y: String,
+}
+
+impl TryFrom<JubjubPointHexRepr> for JubjubPointHex {
+    type Error = ValidationError;
+
+    fn try_from(repr: JubjubPointHexRepr) -> Result<Self, Self::Error> {
+        JubjubPointHex::new(NewJubjubPointHex { x: repr.x, y: repr.y })
+    }
 }
 
 /// Builder arguments for [`JubjubPointHex::new`].
@@ -256,9 +283,26 @@ pub struct LedgerService {
 /// Four 32-byte field-element limbs, each rendered as a 64-char hex string.
 /// Construct via [`SchnorrJubjubDigest::new`]; the inner array is private to
 /// prevent callers from sidestepping the per-limb hex check.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// Decode-side gate: a hand-rolled [`Deserialize`] impl deserialises the
+/// underlying `[String; 4]` and then runs [`SchnorrJubjubDigest::new`], so an
+/// incoming `BuiltTx::bytes` envelope cannot land malformed limbs into a
+/// typed [`DidContractCall::VerifySchnorrJubjubDigestSignature`] value. The
+/// `#[serde(transparent)]` wire format is unchanged — the four-element JSON
+/// array of hex strings re-serialises byte-identically for valid inputs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
 pub struct SchnorrJubjubDigest([String; 4]);
+
+impl<'de> Deserialize<'de> for SchnorrJubjubDigest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let limbs = <[String; 4]>::deserialize(deserializer)?;
+        SchnorrJubjubDigest::new(limbs).map_err(serde::de::Error::custom)
+    }
+}
 
 impl SchnorrJubjubDigest {
     /// Build a new [`SchnorrJubjubDigest`], validating each limb as a
@@ -289,10 +333,36 @@ impl SchnorrJubjubDigest {
 /// 96 bytes = 192 hex characters). Construct via
 /// [`SchnorrJubjubSignature::new`]; the inner string is private to prevent
 /// callers from sidestepping the hex check.
+///
+/// Decode-side gate: deserialisation routes through
+/// [`SchnorrJubjubSignatureRepr`] + `TryFrom`, so an incoming
+/// `BuiltTx::bytes` envelope cannot land a malformed signature into a typed
+/// [`DidContractCall::VerifySchnorrJubjubDigestSignature`] value. The serde
+/// wire format is unchanged — the shim mirrors the pre-decode-gate public
+/// layout byte-for-byte.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "SchnorrJubjubSignatureRepr")]
 pub struct SchnorrJubjubSignature {
     /// Opaque signature bytes (hex-encoded).
     bytes_hex: String,
+}
+
+/// Serde shim for [`SchnorrJubjubSignature`]. Mirrors the pre-decode-gate
+/// public layout so the wire format is byte-identical for valid inputs;
+/// `TryFrom<SchnorrJubjubSignatureRepr>` delegates to
+/// [`SchnorrJubjubSignature::new`] so malformed payloads are rejected at
+/// decode time.
+#[derive(Debug, Clone, Deserialize)]
+struct SchnorrJubjubSignatureRepr {
+    bytes_hex: String,
+}
+
+impl TryFrom<SchnorrJubjubSignatureRepr> for SchnorrJubjubSignature {
+    type Error = ValidationError;
+
+    fn try_from(repr: SchnorrJubjubSignatureRepr) -> Result<Self, Self::Error> {
+        SchnorrJubjubSignature::new(repr.bytes_hex)
+    }
 }
 
 /// Schnorr-Jubjub signature is `(JubjubPoint = 2 * Fr, Fr response)`,
