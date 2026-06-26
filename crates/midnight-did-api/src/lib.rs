@@ -75,13 +75,13 @@ pub use midnight_did_method::network_mapping;
 // Re-exports — common API surface.
 pub use contract::{
     DidLedgerSnapshot, FinalizedTxData, JubjubPointHex, LedgerPublicKeyJwk, LedgerSchnorrJubjubVerificationMethod,
-    LedgerService, LedgerVerificationMethod, LedgerVerificationMethodRelation, MapMutation, SchnorrJubjubDigest,
-    SchnorrJubjubSignature, SetMutation,
+    LedgerService, LedgerVerificationMethod, LedgerVerificationMethodRelation, MapMutation, NewJubjubPointHex,
+    SchnorrJubjubDigest, SchnorrJubjubSignature, SetMutation, ValidationError,
 };
 pub use error::{ApiError, ContractError};
 pub use ledger_mappers::{
-    SchnorrJubjubVerificationMethod, ledger_verification_method_relation_for, public_key_jwk_to_ledger,
-    relation_set_from_state, schnorr_jubjub_verification_method_to_ledger, service_to_ledger,
+    NewSchnorrJubjubVerificationMethod, SchnorrJubjubVerificationMethod, ledger_verification_method_relation_for,
+    public_key_jwk_to_ledger, relation_set_from_state, schnorr_jubjub_verification_method_to_ledger, service_to_ledger,
     verification_method_to_ledger,
 };
 pub use midnight_did_method::network_mapping::{

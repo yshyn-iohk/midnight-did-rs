@@ -38,6 +38,6 @@
 
 pub use midnight_did_runtime::{
     DidLedgerSnapshot, FinalizedTxData, JubjubPointHex, LedgerPublicKeyJwk, LedgerSchnorrJubjubVerificationMethod,
-    LedgerService, LedgerVerificationMethod, LedgerVerificationMethodRelation, MapMutation, SchnorrJubjubDigest,
-    SchnorrJubjubSignature, SetMutation,
+    LedgerService, LedgerVerificationMethod, LedgerVerificationMethodRelation, MapMutation, NewJubjubPointHex,
+    SchnorrJubjubDigest, SchnorrJubjubSignature, SetMutation, ValidationError,
 };

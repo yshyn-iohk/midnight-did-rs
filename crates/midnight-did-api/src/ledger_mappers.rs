@@ -46,12 +46,52 @@ use midnight_did_domain::{
 
 /// Schnorr-Jubjub verification method as seen by the API layer. Mirrors
 /// `SchnorrJubjubVerificationMethod` from `packages/api/src/types.ts`.
+///
+/// Fields are private — construct via [`SchnorrJubjubVerificationMethod::new`]
+/// so the api-layer can enforce non-empty id and the [`JubjubPointHex`]
+/// coordinate-length invariant before the value reaches `BuiltTx::bytes`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SchnorrJubjubVerificationMethod {
     /// Fragment id of the verification method (e.g. `#key-1`).
-    pub id: String,
+    id: String,
     /// Jubjub public key, hex-encoded x/y coordinates.
+    public_key: JubjubPointHex,
+}
+
+/// Builder arguments for [`SchnorrJubjubVerificationMethod::new`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewSchnorrJubjubVerificationMethod {
+    /// Fragment id of the verification method.
+    pub id: String,
+    /// Jubjub public key — already validated by [`JubjubPointHex::new`].
     pub public_key: JubjubPointHex,
+}
+
+impl SchnorrJubjubVerificationMethod {
+    /// Build a new [`SchnorrJubjubVerificationMethod`], rejecting an empty
+    /// id. The `public_key` invariant is already enforced by
+    /// [`JubjubPointHex::new`].
+    pub fn new(args: NewSchnorrJubjubVerificationMethod) -> Result<Self, ApiError> {
+        if args.id.is_empty() {
+            return Err(ApiError::invalid_argument(
+                "SchnorrJubjubVerificationMethod.id must not be empty",
+            ));
+        }
+        Ok(Self {
+            id: args.id,
+            public_key: args.public_key,
+        })
+    }
+
+    /// Fragment id of the verification method.
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// Jubjub public-key coordinates.
+    pub fn public_key(&self) -> &JubjubPointHex {
+        &self.public_key
+    }
 }
 
 /// Map a domain [`PublicKeyJwk`] into the ledger-wire shape, validating both
@@ -174,12 +214,12 @@ pub fn schnorr_jubjub_verification_method_to_ledger<B: Backend>(
 ) -> Result<LedgerSchnorrJubjubVerificationMethod, ApiError> {
     let id = normalize_bound_fragment_id_for(
         contract,
-        &method.id,
+        method.id(),
         BoundIdField::SchnorrJubjubVerificationMethodId,
     )?;
     Ok(LedgerSchnorrJubjubVerificationMethod {
         id,
-        public_key: method.public_key.clone(),
+        public_key: method.public_key().clone(),
     })
 }
 

@@ -32,10 +32,94 @@
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use midnight_did_domain::did_document::{CurveType, KeyType, VerificationMethodType};
 
 use crate::backend::BackendError;
+
+// ─────────────────────────────────────────────────────────────────────
+// Validation error for the at-risk ledger-shape constructors
+// ─────────────────────────────────────────────────────────────────────
+
+/// Failure reason returned by the validating constructors on
+/// [`JubjubPointHex`], [`SchnorrJubjubSignature`], and
+/// [`SchnorrJubjubDigest`].
+///
+/// These types sit on the api → backend hot path: a `BuiltTx::bytes` payload
+/// can only carry them if a constructor returned `Ok`. Builder-validation
+/// audit (`docs/superpowers/notes/2026-06-26-builder-validation-audit.md`)
+/// flagged the previous pub-field shape as bypassable; this enum is the
+/// reason channel for the new gate.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+pub enum ValidationError {
+    /// `field` was empty when a non-empty value was required.
+    #[error("{field} must not be empty")]
+    Empty {
+        /// The field whose value was empty.
+        field: &'static str,
+    },
+    /// `field` was not valid lowercase/uppercase hexadecimal.
+    #[error("{field} must be a hex string ({reason})")]
+    NotHex {
+        /// The field whose value was not hex.
+        field: &'static str,
+        /// Detail on what made the string non-hex (e.g. an invalid character or odd length).
+        reason: String,
+    },
+    /// `field` had the wrong byte length when decoded from hex.
+    #[error("{field} must encode exactly {expected_bytes} bytes (got {actual_bytes})")]
+    WrongByteLength {
+        /// The field whose value was the wrong length.
+        field: &'static str,
+        /// Required byte count.
+        expected_bytes: usize,
+        /// Actual byte count derived from the input hex.
+        actual_bytes: usize,
+    },
+}
+
+/// Decode `s` as hex and return `Ok(byte_count)` on success.
+///
+/// Hex chars accepted are `[0-9a-fA-F]` (matches the `hex` crate's behaviour).
+/// Length must be even; otherwise the decode would split a byte.
+fn validate_hex(s: &str, field: &'static str) -> Result<usize, ValidationError> {
+    if s.is_empty() {
+        return Err(ValidationError::Empty { field });
+    }
+    if !s.len().is_multiple_of(2) {
+        return Err(ValidationError::NotHex {
+            field,
+            reason: format!("odd length ({})", s.len()),
+        });
+    }
+    for (idx, ch) in s.chars().enumerate() {
+        if !ch.is_ascii_hexdigit() {
+            return Err(ValidationError::NotHex {
+                field,
+                reason: format!("non-hex character {ch:?} at index {idx}"),
+            });
+        }
+    }
+    Ok(s.len() / 2)
+}
+
+/// Validate `s` as hex of exactly `expected_bytes` bytes.
+fn validate_hex_exact(s: &str, expected_bytes: usize, field: &'static str) -> Result<(), ValidationError> {
+    let actual = validate_hex(s, field)?;
+    if actual != expected_bytes {
+        return Err(ValidationError::WrongByteLength {
+            field,
+            expected_bytes,
+            actual_bytes: actual,
+        });
+    }
+    Ok(())
+}
+
+/// Jubjub coordinates are encoded as exactly 32 bytes (BLS12-381 `Fr`
+/// scalar-field elements rendered as little-endian-base16 hex).
+const JUBJUB_COORDINATE_BYTES: usize = 32;
 
 // ─────────────────────────────────────────────────────────────────────
 // Ledger-shape value types (moved from midnight-did-api per R2-2.1)
@@ -104,12 +188,46 @@ pub struct LedgerVerificationMethod {
 }
 
 /// Pair-of-coordinate Jubjub point in hex form.
+///
+/// Each coordinate must be exactly [`JUBJUB_COORDINATE_BYTES`] bytes (64 hex
+/// characters) — that is the on-chain encoding of an outer-curve `Fr` scalar.
+/// Construct via [`JubjubPointHex::new`]; the fields are private to prevent
+/// callers from sidestepping the check.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JubjubPointHex {
+    /// X coordinate as hex (64 chars).
+    x: String,
+    /// Y coordinate as hex (64 chars).
+    y: String,
+}
+
+/// Builder arguments for [`JubjubPointHex::new`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewJubjubPointHex {
     /// X coordinate as hex.
     pub x: String,
     /// Y coordinate as hex.
     pub y: String,
+}
+
+impl JubjubPointHex {
+    /// Build a new [`JubjubPointHex`], validating both coordinates as
+    /// exactly 32-byte hex strings.
+    pub fn new(args: NewJubjubPointHex) -> Result<Self, ValidationError> {
+        validate_hex_exact(&args.x, JUBJUB_COORDINATE_BYTES, "JubjubPointHex.x")?;
+        validate_hex_exact(&args.y, JUBJUB_COORDINATE_BYTES, "JubjubPointHex.y")?;
+        Ok(Self { x: args.x, y: args.y })
+    }
+
+    /// X coordinate.
+    pub fn x(&self) -> &str {
+        &self.x
+    }
+
+    /// Y coordinate.
+    pub fn y(&self) -> &str {
+        &self.y
+    }
 }
 
 /// Ledger-shaped Schnorr-Jubjub verification method.
@@ -134,14 +252,65 @@ pub struct LedgerService {
 
 /// Schnorr-Jubjub digest argument to
 /// [`DidContractCall::VerifySchnorrJubjubDigestSignature`].
-pub type SchnorrJubjubDigest = [String; 4];
+///
+/// Four 32-byte field-element limbs, each rendered as a 64-char hex string.
+/// Construct via [`SchnorrJubjubDigest::new`]; the inner array is private to
+/// prevent callers from sidestepping the per-limb hex check.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct SchnorrJubjubDigest([String; 4]);
 
-/// Schnorr signature payload — kept opaque so the api layer can carry it
-/// across without depending on the runtime's representation.
+impl SchnorrJubjubDigest {
+    /// Build a new [`SchnorrJubjubDigest`], validating each limb as a
+    /// 32-byte hex string.
+    pub fn new(limbs: [String; 4]) -> Result<Self, ValidationError> {
+        for (idx, limb) in limbs.iter().enumerate() {
+            let field: &'static str = match idx {
+                0 => "SchnorrJubjubDigest[0]",
+                1 => "SchnorrJubjubDigest[1]",
+                2 => "SchnorrJubjubDigest[2]",
+                _ => "SchnorrJubjubDigest[3]",
+            };
+            validate_hex_exact(limb, JUBJUB_COORDINATE_BYTES, field)?;
+        }
+        Ok(Self(limbs))
+    }
+
+    /// Borrowed view of the four limbs.
+    pub fn limbs(&self) -> &[String; 4] {
+        &self.0
+    }
+}
+
+/// Schnorr signature payload — encodes the announcement point and response
+/// scalar of a Schnorr-Jubjub signature as concatenated hex.
+///
+/// Layout: `announcement.x || announcement.y || response` (3 × 32 bytes =
+/// 96 bytes = 192 hex characters). Construct via
+/// [`SchnorrJubjubSignature::new`]; the inner string is private to prevent
+/// callers from sidestepping the hex check.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SchnorrJubjubSignature {
     /// Opaque signature bytes (hex-encoded).
-    pub bytes_hex: String,
+    bytes_hex: String,
+}
+
+/// Schnorr-Jubjub signature is `(JubjubPoint = 2 * Fr, Fr response)`,
+/// 3 × 32 bytes = 96 bytes.
+const SCHNORR_JUBJUB_SIGNATURE_BYTES: usize = 96;
+
+impl SchnorrJubjubSignature {
+    /// Build a new [`SchnorrJubjubSignature`], validating the hex payload
+    /// as exactly 96 bytes (the on-chain Schnorr-Jubjub signature size).
+    pub fn new(bytes_hex: String) -> Result<Self, ValidationError> {
+        validate_hex_exact(&bytes_hex, SCHNORR_JUBJUB_SIGNATURE_BYTES, "SchnorrJubjubSignature.bytes_hex")?;
+        Ok(Self { bytes_hex })
+    }
+
+    /// Hex-encoded payload.
+    pub fn bytes_hex(&self) -> &str {
+        &self.bytes_hex
+    }
 }
 
 /// Plain-data snapshot of the DID contract's `Ledger`.

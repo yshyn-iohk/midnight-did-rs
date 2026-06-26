@@ -2264,6 +2264,7 @@ dependencies = [
  "midnight-transient-crypto",
  "serde",
  "serde_json",
+ "thiserror",
  "tokio",
 ]
 

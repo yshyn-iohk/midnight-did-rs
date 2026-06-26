@@ -239,8 +239,8 @@ pub fn ledger_jwk_to_domain(jwk: &LedgerPublicKeyJwk) -> Result<PublicKeyJwk, Ap
 
 /// Reconstruct a Jubjub `PublicKeyJwk` from a Schnorr-Jubjub ledger entry.
 pub fn schnorr_jubjub_pk_to_jwk(method: &LedgerSchnorrJubjubVerificationMethod) -> Result<PublicKeyJwk, ApiError> {
-    let x = decode_jubjub_coordinate(&method.public_key.x, "publicKey.x")?;
-    let y = decode_jubjub_coordinate(&method.public_key.y, "publicKey.y")?;
+    let x = decode_jubjub_coordinate(method.public_key.x(), "publicKey.x")?;
+    let y = decode_jubjub_coordinate(method.public_key.y(), "publicKey.y")?;
     Ok(PublicKeyJwk::new(NewPublicKeyJwk {
         kty: KeyType::EC,
         crv: CurveType::Jubjub,

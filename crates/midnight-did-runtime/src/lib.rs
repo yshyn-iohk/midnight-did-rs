@@ -14,8 +14,8 @@ pub mod contract_wrapper;
 pub use backend::{Backend, BackendError, BuiltTx, FinalizedTxData, LiveBackend, RecordingBackend, ResolverBackend};
 pub use contract_call::{
     DidContractCall, DidLedgerSnapshot, JubjubPointHex, LedgerPublicKeyJwk, LedgerSchnorrJubjubVerificationMethod,
-    LedgerService, LedgerVerificationMethod, LedgerVerificationMethodRelation, MapMutation, SchnorrJubjubDigest,
-    SchnorrJubjubSignature, SetMutation,
+    LedgerService, LedgerVerificationMethod, LedgerVerificationMethodRelation, MapMutation, NewJubjubPointHex,
+    SchnorrJubjubDigest, SchnorrJubjubSignature, SetMutation, ValidationError,
 };
 pub use contract_wrapper::Contract;
 

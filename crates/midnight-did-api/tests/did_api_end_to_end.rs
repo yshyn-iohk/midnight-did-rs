@@ -44,12 +44,12 @@ use std::path::PathBuf;
 use midnight_did_api::{
     contract::{
         DidLedgerSnapshot, JubjubPointHex, LedgerPublicKeyJwk, LedgerSchnorrJubjubVerificationMethod, LedgerService,
-        LedgerVerificationMethod,
+        LedgerVerificationMethod, NewJubjubPointHex,
     },
     controller_operations::rotate_controller_key,
     did_operations::create_did,
     document_operations::{add_also_known_as, deactivate, remove_also_known_as},
-    ledger_mappers::SchnorrJubjubVerificationMethod,
+    ledger_mappers::{NewSchnorrJubjubVerificationMethod, SchnorrJubjubVerificationMethod},
     private_state::{InMemoryPrivateStateStore, PrivateStateSlot, restore_private_state},
     resolution::{ledger_state_to_did_document, ledger_state_to_metadata, resolve},
     service_operations::{add_service, remove_service},
@@ -82,6 +82,23 @@ const ADDR: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789ab
 
 fn did_subject() -> String {
     format!("did:midnight:undeployed:{ADDR}")
+}
+
+/// Build a `JubjubPointHex` matching the legacy `{x: "01", y: "02"}` fixture
+/// shape, padded out to the 32-byte length the validating constructor
+/// requires.
+///
+/// `decode_jubjub_coordinate` (in `resolution.rs`) zero-pads short inputs on
+/// the right, so the resolver-derived `publicKeyJwk` matches the JSON
+/// fixtures `"AQAA…"` / `"AgAA…"` either way; this helper just renders the
+/// full 32 bytes explicitly so the new `JubjubPointHex::new` length check
+/// passes.
+fn jub_point_one_two() -> JubjubPointHex {
+    JubjubPointHex::new(NewJubjubPointHex {
+        x: format!("01{}", "00".repeat(31)),
+        y: format!("02{}", "00".repeat(31)),
+    })
+    .expect("valid Jubjub point fixture")
 }
 
 fn fixtures_dir() -> PathBuf {
@@ -679,13 +696,11 @@ async fn after_remove_vm_matches_ts_fixture() {
 async fn after_set_schnorr_jubjub_vm_insert_matches_ts_fixture() {
     let contract = contract_with(MidnightNetwork::Undeployed, initial_ledger());
 
-    let vm = SchnorrJubjubVerificationMethod {
+    let vm = SchnorrJubjubVerificationMethod::new(NewSchnorrJubjubVerificationMethod {
         id: "#jub-1".into(),
-        public_key: JubjubPointHex {
-            x: "01".into(),
-            y: "02".into(),
-        },
-    };
+        public_key: jub_point_one_two(),
+    })
+    .expect("valid SchnorrJubjub VM fixture");
     add_schnorr_jubjub_verification_method(&contract, &vm).await.unwrap();
 
     let mut post = initial_ledger();
@@ -693,10 +708,7 @@ async fn after_set_schnorr_jubjub_vm_insert_matches_ts_fixture() {
         "#jub-1".into(),
         LedgerSchnorrJubjubVerificationMethod {
             id: "#jub-1".into(),
-            public_key: JubjubPointHex {
-                x: "01".into(),
-                y: "02".into(),
-            },
+            public_key: jub_point_one_two(),
         },
     );
     post.version = 2;
@@ -721,10 +733,7 @@ async fn after_remove_schnorr_jubjub_vm_matches_ts_fixture() {
         "#jub-1".into(),
         LedgerSchnorrJubjubVerificationMethod {
             id: "#jub-1".into(),
-            public_key: JubjubPointHex {
-                x: "01".into(),
-                y: "02".into(),
-            },
+            public_key: jub_point_one_two(),
         },
     );
     pre.version = 2;

@@ -31,11 +31,11 @@ use std::collections::BTreeMap;
 
 use midnight_did_api::{
     contract::{
-        DidLedgerSnapshot, JubjubPointHex, LedgerVerificationMethodRelation, MapMutation, SchnorrJubjubSignature,
-        SetMutation,
+        DidLedgerSnapshot, JubjubPointHex, LedgerVerificationMethodRelation, MapMutation, NewJubjubPointHex,
+        SchnorrJubjubDigest, SchnorrJubjubSignature, SetMutation,
     },
     error::ApiError,
-    ledger_mappers::SchnorrJubjubVerificationMethod,
+    ledger_mappers::{NewSchnorrJubjubVerificationMethod, SchnorrJubjubVerificationMethod},
     verification_method_operations::{
         VERIFICATION_METHOD_RELATIONS, add_schnorr_jubjub_verification_method, add_verification_method,
         add_verification_method_relation, remove_schnorr_jubjub_verification_method, remove_verification_method,
@@ -100,10 +100,14 @@ fn ed25519_vm(id: &str) -> VerificationMethod {
 async fn verifies_schnorr_jubjub_signature_with_normalized_method_id() {
     let c = contract();
     let absolute_method_id = format!("{}#key-1", did_subject());
-    let digest = ["1".to_string(), "2".to_string(), "3".to_string(), "4".to_string()];
-    let signature = SchnorrJubjubSignature {
-        bytes_hex: "deadbeef".into(),
-    };
+    let digest = SchnorrJubjubDigest::new([
+        "01".repeat(32),
+        "02".repeat(32),
+        "03".repeat(32),
+        "04".repeat(32),
+    ])
+    .expect("valid digest fixture");
+    let signature = SchnorrJubjubSignature::new("ab".repeat(96)).expect("valid signature fixture");
 
     verify_schnorr_jubjub_digest_signature(&c, &absolute_method_id, digest.clone(), signature.clone())
         .await
@@ -223,13 +227,15 @@ async fn remove_verification_method_skips_relations_it_does_not_belong_to() {
 #[tokio::test]
 async fn add_schnorr_jubjub_verification_method_records_insert() {
     let c = contract();
-    let vm = SchnorrJubjubVerificationMethod {
+    let vm = SchnorrJubjubVerificationMethod::new(NewSchnorrJubjubVerificationMethod {
         id: "#key-sj".to_string(),
-        public_key: JubjubPointHex {
+        public_key: JubjubPointHex::new(NewJubjubPointHex {
             x: "00".repeat(32),
             y: "01".repeat(32),
-        },
-    };
+        })
+        .expect("valid Jubjub point fixture"),
+    })
+    .expect("valid SchnorrJubjub VM fixture");
     add_schnorr_jubjub_verification_method(&c, &vm).await.expect("add ok");
     let calls = c.backend.recorded_calls();
     assert!(

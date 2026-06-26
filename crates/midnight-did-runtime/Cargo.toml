@@ -52,6 +52,11 @@ serde_json  = { workspace = true }
 hex         = { workspace = true }
 blake2      = "0.10"
 
+# R2-3 (architecture-audit Rec #1): validating constructors on
+# `JubjubPointHex`, `SchnorrJubjubSignature`, and `SchnorrJubjubDigest`
+# return a typed `ValidationError`.
+thiserror   = "2"
+
 [dev-dependencies]
 # R2-1: tokio runtime for the `Backend` impls' unit tests (current-thread,
 # no IO).
