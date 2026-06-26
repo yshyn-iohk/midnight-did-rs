@@ -136,6 +136,27 @@ a stable test-recording surface) or be deleted (if
 `generated::Contract`'s inputs become directly recordable). Either
 choice is purely internal to the runtime crate at that point.
 
+### Builder + decode validation gate
+
+The audit-flagged ledger-shape types (`JubjubPointHex`,
+`SchnorrJubjubSignature`, `SchnorrJubjubDigest`) are now closed on
+both sides of `BuiltTx::bytes`:
+
+- Encoding side ([`59ed1f5`](https://github.com/yshyn-iohk/midnight-did-rs/commit/59ed1f5)) —
+  fields privatised, validating `::new` constructors. Callers cannot
+  struct-literal a malformed value into a `DidContractCall` variant.
+- Decoding side ([`b3fdb20`](https://github.com/yshyn-iohk/midnight-did-rs/commit/b3fdb20)) —
+  `#[serde(try_from = "Repr")]` shims + hand-rolled `Deserialize` on
+  the `#[serde(transparent)]` digest. An incoming envelope decoded
+  via `RecordingBackend::submit_tx` (or any future `LiveBackend`
+  consuming externally-produced bytes) cannot land a malformed inner
+  value either. Wire format stays byte-identical for valid inputs.
+
+The api-layer `SchnorrJubjubVerificationMethod` wrapper in
+`midnight-did-api/src/ledger_mappers.rs` does not derive `Serialize`
+/ `Deserialize` and is never on the envelope wire — its `::new`
+constructor is sufficient.
+
 ## References
 
 - R2 design spec:
