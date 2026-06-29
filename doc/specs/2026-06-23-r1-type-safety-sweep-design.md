@@ -6,6 +6,11 @@ SPDX-License-Identifier: Apache-2.0
 
 # R1 — Type-safety sweep (design spec)
 
+> **Status (post-v0.3.0): Implemented.** R1-4b/4c closed in commits
+> `0b875a8` + `65ed7f6`; the "deferred to R2" language below is
+> historical. The R2 reform itself landed in v0.4.0 (`Contract<B: Backend>`
+> shape, ADR 0008). This spec is preserved for design-time provenance.
+
 **Status:** Approved 2026-06-23. Implementation in progress.
 **Supersedes parts of:** [0002 trait-erasure-for-contract](../adr/0002-trait-erasure-for-contract.md) (defers full reform to R2), [0004 private-state-as-trait](../adr/0004-private-state-as-trait.md) (defers reform to R2).
 **Target version:** `v0.2.0` across all crates (clean break, no deprecation shims).
