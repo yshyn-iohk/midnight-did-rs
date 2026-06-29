@@ -78,6 +78,7 @@ fn is_base64url_byte(byte: u8) -> bool {
 
 /// Encode `bytes` as unpadded base64url. Matches `encodeBase64Url` in the
 /// TS port (no `=` padding, `-`/`_` alphabet).
+#[must_use]
 pub fn encode_base64url(bytes: &[u8]) -> String {
     URL_SAFE_NO_PAD.encode(bytes)
 }
@@ -87,6 +88,12 @@ pub fn encode_base64url(bytes: &[u8]) -> String {
 /// Mirrors `decodeBase64Url` in the TS port: ignores `=` and is lenient on
 /// length-mod-4 corner cases. Use [`decode_base64url_bytes`] when you need a
 /// canonical, fixed-length decode.
+///
+/// # Errors
+///
+/// Returns [`CodecError::InvalidLength`] when the input length-mod-4 is 1
+/// (impossible for unpadded base64url), or [`CodecError::InvalidCharacter`]
+/// when the decoder rejects any character.
 pub fn decode_base64url(input: &str) -> Result<Vec<u8>, CodecError> {
     // Be lenient like the TS port: insert padding for non-zero modulos so we
     // can round-trip values written by tooling that accidentally drops or
@@ -112,6 +119,15 @@ pub fn decode_base64url(input: &str) -> Result<Vec<u8>, CodecError> {
 /// 1. character-set is unpadded base64url (`^[A-Za-z0-9_-]+$`),
 /// 2. decoded byte length matches `expected_length`,
 /// 3. re-encoding round-trips to `input` (canonical form).
+///
+/// # Errors
+///
+/// Returns [`CodecError::InvalidCharacter`] when the input is empty, has an
+/// invalid length-mod-4, or contains characters outside the unpadded
+/// base64url alphabet. Returns [`CodecError::UnexpectedByteLength`] when the
+/// decoded length does not match `expected_length`. Returns
+/// [`CodecError::NotCanonical`] when re-encoding does not round-trip to
+/// `input`.
 pub fn decode_base64url_bytes(input: &str, expected_length: usize, label: &str) -> Result<Vec<u8>, CodecError> {
     if !is_base64url_text(input) || input.len() % 4 == 1 {
         return Err(CodecError::InvalidCharacter { label: label.into() });
@@ -131,6 +147,11 @@ pub fn decode_base64url_bytes(input: &str, expected_length: usize, label: &str) 
 }
 
 /// Convenience wrapper around [`decode_base64url_bytes`] with `expected_length = 32`.
+///
+/// # Errors
+///
+/// Forwards every [`CodecError`] variant produced by
+/// [`decode_base64url_bytes`].
 pub fn decode_base64url_bytes_32(input: &str, label: &str) -> Result<Vec<u8>, CodecError> {
     decode_base64url_bytes(input, 32, label)
 }
@@ -139,6 +160,10 @@ pub fn decode_base64url_bytes_32(input: &str, label: &str) -> Result<Vec<u8>, Co
 ///
 /// Matches `decodeFieldElement` in TS. Returns 0 for the empty string (since
 /// `decode_base64url("")` returns `[]`).
+///
+/// # Errors
+///
+/// Forwards every [`CodecError`] variant produced by [`decode_base64url`].
 pub fn decode_field_element(s: &str) -> Result<num_decode::BigUintBytes, CodecError> {
     let bytes = decode_base64url(s)?;
     Ok(num_decode::BigUintBytes(bytes))
@@ -146,6 +171,7 @@ pub fn decode_field_element(s: &str) -> Result<num_decode::BigUintBytes, CodecEr
 
 /// Encode a big-endian byte representation of an unsigned integer as
 /// unpadded base64url. Matches `encodeFieldElement` in TS.
+#[must_use]
 pub fn encode_field_element(value: &num_decode::BigUintBytes) -> String {
     let mut start = 0;
     while start + 1 < value.0.len() && value.0[start] == 0 {

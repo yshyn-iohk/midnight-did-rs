@@ -74,6 +74,7 @@ pub struct ValidationError {
 
 impl ValidationError {
     /// Build a [`ValidationError`] from a non-empty issue list.
+    #[must_use]
     pub fn from_issues(issues: Vec<ValidationIssue>) -> Self {
         let summary = issues
             .iter()
@@ -201,6 +202,12 @@ fn is_did_key_id(value: &str) -> bool {
 
 impl DidUrl {
     /// Validate a candidate DID URL.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] when the value is not a syntactically
+    /// valid DID URL (i.e. does not begin with `did:` followed by at least
+    /// a method and method-specific identifier).
     pub fn parse(value: impl Into<String>) -> Result<Self, ValidationError> {
         let s = value.into();
         if !is_did_url(&s) {
@@ -224,6 +231,12 @@ impl DidUrl {
 
 impl RelativeUrl {
     /// Validate a candidate relative URL.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] when the value contains a URI scheme,
+    /// starts with `//`, or otherwise cannot be parsed as a reference
+    /// relative to the DID subject.
     pub fn parse(value: impl Into<String>) -> Result<Self, ValidationError> {
         let s = value.into();
         if !is_relative_reference(&s) {
@@ -247,6 +260,12 @@ impl RelativeUrl {
 
 impl DidString {
     /// Validate a candidate bare DID string.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] when the value is not in
+    /// `did:<method>:<msi>` form, or when it contains path/query/fragment
+    /// characters (`/`, `?`, `#`).
     pub fn parse(value: impl Into<String>) -> Result<Self, ValidationError> {
         let s = value.into();
         if !is_did_string(&s) {
@@ -270,6 +289,12 @@ impl DidString {
 
 impl DidKeyId {
     /// Validate a candidate DID key id.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] when the value is neither a DID URL
+    /// nor a relative reference, or when its fragment portion is missing
+    /// or contains characters outside `[A-Za-z0-9.-_:%]`.
     pub fn parse(value: impl Into<String>) -> Result<Self, ValidationError> {
         let s = value.into();
         if !is_did_key_id(&s) {
@@ -373,6 +398,7 @@ pub enum PublicKeyJwkCoordinate {
 ///
 /// Returns `None` for unsupported `(kty, crv, coordinate)` triples — same
 /// semantics as the TS helper.
+#[must_use]
 pub fn public_key_jwk_coordinate_byte_length(
     kty: KeyType,
     crv: CurveType,
@@ -478,6 +504,14 @@ impl PublicKeyJwk {
     /// R1 step 4a: this is the preferred constructor. Returns
     /// [`ValidationError`] (step 6 will swap to a domain-specific
     /// `VerificationError`) if any invariant is violated.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] when the input carries private key
+    /// material in `extensions`, when the `kty`/`crv` pair is not a
+    /// supported combination, when the `y` coordinate presence is
+    /// inconsistent with `kty`, or when `x` / `y` are not canonical
+    /// base64url of the expected coordinate length.
     pub fn new(params: NewPublicKeyJwk) -> Result<Self, ValidationError> {
         let jwk = Self {
             kty: params.kty,
@@ -491,11 +525,13 @@ impl PublicKeyJwk {
     }
 
     /// Borrow the `kty` (key type).
+    #[must_use]
     pub fn kty(&self) -> KeyType {
         self.kty
     }
 
     /// Borrow the `crv` (curve).
+    #[must_use]
     pub fn crv(&self) -> CurveType {
         self.crv
     }
@@ -517,6 +553,12 @@ impl PublicKeyJwk {
     }
 
     /// Run all JWK validation checks. Returns the structured list of issues.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] when [`Self::collect_issues`] yields a
+    /// non-empty list — the same conditions enforced at construction time
+    /// (see [`Self::new`]).
     pub fn validate(&self) -> Result<(), ValidationError> {
         let issues = self.collect_issues();
         if issues.is_empty() {
@@ -529,6 +571,7 @@ impl PublicKeyJwk {
     /// Variant of [`Self::validate`] that returns issues without bundling them
     /// into a [`ValidationError`]. Useful when a caller wants to collect
     /// issues from several values into one error.
+    #[must_use]
     pub fn collect_issues(&self) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
         if self.extensions.contains_key("d") {
@@ -583,6 +626,12 @@ impl PublicKeyJwk {
     /// Convenience helper: decode the `x` coordinate to bytes (canonical
     /// length-checked decode). Returns a [`CodecError`] if the value is not a
     /// canonical base64url string of the expected length.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`CodecError`] when the stored `x` coordinate is not
+    /// canonical base64url of the expected byte length for the JWK's
+    /// `(kty, crv)` profile.
     pub fn decode_x(&self) -> Result<Vec<u8>, CodecError> {
         let expected = public_key_jwk_coordinate_byte_length(self.kty, self.crv, PublicKeyJwkCoordinate::X)
             .unwrap_or(self.x.len());
@@ -636,6 +685,13 @@ impl VerificationMethod {
     ///
     /// R1 step 4a/4c: this is the only constructor. The legacy
     /// `create_verification_method` free function was retired in v0.3.0.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] when `id` is not a valid DID key id
+    /// (see [`DidKeyId::parse`]), when `controller` is not a valid bare
+    /// DID (see [`DidString::parse`]), or when the embedded JWK fails
+    /// validation (see [`PublicKeyJwk::new`]).
     pub fn new(input: NewVerificationMethod) -> Result<Self, ValidationError> {
         let vm = Self {
             id: DidKeyId::parse(input.id)?,
@@ -668,6 +724,11 @@ impl VerificationMethod {
     }
 
     /// Validate this method's id, controller, and embedded JWK.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] aggregating any issues found in `id`,
+    /// `controller`, or the embedded JWK (see [`PublicKeyJwk::collect_issues`]).
     pub fn validate(&self) -> Result<(), ValidationError> {
         let mut issues = Vec::new();
         if !is_did_key_id(self.id.as_str()) {
@@ -757,6 +818,12 @@ impl Service {
     ///
     /// R1 step 4a/4c: this is the only constructor. The legacy
     /// `create_service` free function was retired in v0.3.0.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] when `id` is neither a DID URL nor a
+    /// relative reference, or when `type_` is empty (single empty string
+    /// or empty array).
     pub fn new(input: NewService) -> Result<Self, ValidationError> {
         let mut svc = Self {
             id: input.id,
@@ -785,6 +852,11 @@ impl Service {
 
     /// Run id and serviceEndpoint structural checks. Endpoint normalization
     /// is handled separately via [`normalize_service_endpoint`].
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] when the `id` is neither a DID URL
+    /// nor a relative reference, or when `type` is empty.
     pub fn validate(&self) -> Result<(), ValidationError> {
         let mut issues = Vec::new();
         if !is_did_url(&self.id) && !is_relative_reference(&self.id) {
@@ -822,6 +894,7 @@ fn normalize_endpoint_value(value: JsonValue) -> JsonValue {
 ///
 /// String endpoints are normalized directly; arrays and objects are walked
 /// recursively. Matches `normalizeServiceEndpoint` in TS.
+#[must_use]
 pub fn normalize_service_endpoint(endpoint: ServiceEndpoint) -> ServiceEndpoint {
     match endpoint {
         ServiceEndpoint::Uri(s) => ServiceEndpoint::Uri(normalize_uri_string(&s)),
@@ -917,6 +990,13 @@ pub struct DidDocument {
 impl DidDocument {
     /// Run W3C DID Core cross-consistency validation. Returns a structured
     /// list of issues; the message text matches the TS port.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] when verification-method ids are not
+    /// unique, when any verification-relation entry references a missing
+    /// verification method, when service ids are not unique, or when a
+    /// service endpoint array contains duplicate entries.
     pub fn validate(&self) -> Result<(), ValidationError> {
         let mut issues = Vec::new();
         let normalized = self.clone().with_normalized_service_endpoints();
@@ -1028,6 +1108,7 @@ impl DidDocument {
 
     /// Return a copy of this document with every service endpoint URI run
     /// through [`normalize_service_endpoint`].
+    #[must_use]
     pub fn with_normalized_service_endpoints(mut self) -> Self {
         if let Some(services) = self.service.as_mut() {
             for service in services.iter_mut() {
@@ -1137,6 +1218,11 @@ pub struct DidResolutionErrorCode(pub String);
 
 impl DidResolutionErrorCode {
     /// Validate the keyword shape (`[A-Za-z][A-Za-z0-9]*`).
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] when the code is empty or contains
+    /// any character outside the `[A-Za-z][A-Za-z0-9]*` keyword grammar.
     pub fn validate(&self) -> Result<(), ValidationError> {
         let bytes = self.0.as_bytes();
         let valid =
@@ -1190,6 +1276,12 @@ pub struct DidResolutionResult {
 // ---------------------------------------------------------------------------
 
 /// Validate a candidate JSON DID Document.
+///
+/// # Errors
+///
+/// Returns a [`ValidationError`] when the JSON shape does not deserialise
+/// into a [`DidDocument`] or when [`DidDocument::validate`] surfaces any
+/// cross-consistency issue.
 pub fn parse_did_document(value: JsonValue) -> Result<DidDocument, ValidationError> {
     let doc: DidDocument = serde_json::from_value(value).map_err(|e| {
         ValidationError::from_issues(vec![ValidationIssue::new(format!(
@@ -1201,21 +1293,39 @@ pub fn parse_did_document(value: JsonValue) -> Result<DidDocument, ValidationErr
 }
 
 /// Validate a candidate DID URL string.
+///
+/// # Errors
+///
+/// Forwards the [`ValidationError`] from [`DidUrl::parse`].
 pub fn parse_did_url(input: &str) -> Result<DidUrl, ValidationError> {
     DidUrl::parse(input)
 }
 
 /// Validate a candidate DID Key ID string.
+///
+/// # Errors
+///
+/// Forwards the [`ValidationError`] from [`DidKeyId::parse`].
 pub fn parse_did_key_id(input: &str) -> Result<DidKeyId, ValidationError> {
     DidKeyId::parse(input)
 }
 
 /// Validate a candidate bare DID string.
+///
+/// # Errors
+///
+/// Forwards the [`ValidationError`] from [`DidString::parse`].
 pub fn parse_did(input: &str) -> Result<DidString, ValidationError> {
     DidString::parse(input)
 }
 
 /// Validate and return a verification method.
+///
+/// # Errors
+///
+/// Returns a [`ValidationError`] when the JSON shape does not deserialise
+/// into a [`VerificationMethod`] or when [`VerificationMethod::validate`]
+/// fails.
 pub fn parse_verification_method(value: JsonValue) -> Result<VerificationMethod, ValidationError> {
     let vm: VerificationMethod = serde_json::from_value(value).map_err(|e| {
         ValidationError::from_issues(vec![ValidationIssue::new(format!(
@@ -1227,6 +1337,11 @@ pub fn parse_verification_method(value: JsonValue) -> Result<VerificationMethod,
 }
 
 /// Validate and return a service entry (with normalized endpoints).
+///
+/// # Errors
+///
+/// Returns a [`ValidationError`] when the JSON shape does not deserialise
+/// into a [`Service`] or when [`Service::validate`] fails.
 pub fn parse_service(value: JsonValue) -> Result<Service, ValidationError> {
     let mut svc: Service = serde_json::from_value(value).map_err(|e| {
         ValidationError::from_issues(vec![ValidationIssue::new(format!(
@@ -1322,6 +1437,7 @@ impl DidDocumentBuilder {
     /// Start a new builder for the given DID subject string. Subject
     /// validity is checked at [`Self::build`] time so the builder
     /// itself never fails — the construction path remains fluent.
+    #[must_use]
     pub fn new(id: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -1340,18 +1456,21 @@ impl DidDocumentBuilder {
 
     /// Override the JSON-LD `@context`. Defaults to
     /// `https://www.w3.org/ns/did/v1` when unset.
+    #[must_use]
     pub fn context(mut self, ctx: DocumentContext) -> Self {
         self.context = Some(ctx);
         self
     }
 
     /// Set `alsoKnownAs` aliases.
+    #[must_use]
     pub fn also_known_as(mut self, aliases: Vec<String>) -> Self {
         self.also_known_as = Some(aliases);
         self
     }
 
     /// Set the `controller` (single DID or array).
+    #[must_use]
     pub fn controller(mut self, c: Controller) -> Self {
         self.controller = Some(c);
         self
@@ -1360,12 +1479,14 @@ impl DidDocumentBuilder {
     /// Append a verification method. Cross-reference validation on
     /// [`Self::build`] ensures no duplicates and that any relation
     /// referencing this VM's id finds it.
+    #[must_use]
     pub fn add_verification_method(mut self, vm: VerificationMethod) -> Self {
         self.verification_method.push(vm);
         self
     }
 
     /// Append a service. [`Self::build`] enforces no duplicates by id.
+    #[must_use]
     pub fn add_service(mut self, svc: Service) -> Self {
         self.service.push(svc);
         self
@@ -1373,30 +1494,35 @@ impl DidDocumentBuilder {
 
     /// Set the `authentication` relation. Each id must reference an
     /// existing verification method.
+    #[must_use]
     pub fn authentication(mut self, ids: Vec<DidKeyId>) -> Self {
         self.authentication = ids;
         self
     }
 
     /// Set the `assertionMethod` relation.
+    #[must_use]
     pub fn assertion_method(mut self, ids: Vec<DidKeyId>) -> Self {
         self.assertion_method = ids;
         self
     }
 
     /// Set the `keyAgreement` relation.
+    #[must_use]
     pub fn key_agreement(mut self, ids: Vec<DidKeyId>) -> Self {
         self.key_agreement = ids;
         self
     }
 
     /// Set the `capabilityInvocation` relation.
+    #[must_use]
     pub fn capability_invocation(mut self, ids: Vec<DidKeyId>) -> Self {
         self.capability_invocation = ids;
         self
     }
 
     /// Set the `capabilityDelegation` relation.
+    #[must_use]
     pub fn capability_delegation(mut self, ids: Vec<DidKeyId>) -> Self {
         self.capability_delegation = ids;
         self
@@ -1412,6 +1538,14 @@ impl DidDocumentBuilder {
     /// 4. Cross-reference: every relation id must match a VM id;
     /// 5. Existing `DidDocument::validate()` runs as the final
     ///    catch-all.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] when the subject DID is not parseable
+    /// (see [`DidString::parse`]), when verification-method or service ids
+    /// are duplicated, when any verification-relation id does not match a
+    /// known verification method, or when the final
+    /// [`DidDocument::validate`] catch-all surfaces additional issues.
     pub fn build(self) -> Result<DidDocument, ValidationError> {
         let subject = DidString::parse(self.id)?;
 
@@ -1515,6 +1649,11 @@ impl DidDocumentBuilder {
 
 /// Build a fully validated DID Document. Defaults `@context` to the standard
 /// DID-Core context when unset.
+///
+/// # Errors
+///
+/// Returns a [`ValidationError`] when the subject DID does not parse or
+/// when [`DidDocument::validate`] surfaces any cross-consistency issue.
 pub fn create_did_document(params: CreateDidDocumentParams) -> Result<DidDocument, ValidationError> {
     let doc = DidDocument {
         context: params

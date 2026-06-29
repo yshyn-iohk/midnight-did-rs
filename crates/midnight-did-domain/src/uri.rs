@@ -50,6 +50,7 @@ fn extract_scheme(value: &str) -> Option<&str> {
 /// removal, etc.). Returns `value` unchanged when the scheme is unknown or
 /// when the URL parser refuses to accept it (matching the TS port's
 /// best-effort behavior).
+#[must_use]
 pub fn normalize_uri_string(value: &str) -> String {
     let Some(scheme) = extract_scheme(value) else {
         return value.to_owned();
@@ -100,6 +101,7 @@ fn normalize_unknown(value: JsonValue) -> JsonValue {
 
 /// Walk a generic JSON value and normalize every string it contains using
 /// [`normalize_uri_string`]. Mirrors `normalizeServiceEndpointValue` in TS.
+#[must_use]
 pub fn normalize_service_endpoint_value(endpoint: JsonValue) -> JsonValue {
     normalize_unknown(endpoint)
 }

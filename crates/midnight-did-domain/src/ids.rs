@@ -84,6 +84,13 @@ pub struct DidKeyId(String);
 impl DidKeyId {
     /// Validate and construct a `DidKeyId`. Mirrors W3C DID Core
     /// §3.2 URL syntax: `did:<method>:<msi>#<fragment>`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`IdError::Empty`] if the input is whitespace-only,
+    /// [`IdError::InvalidDidUri`] if the `did:` scheme is missing, or
+    /// [`IdError::MissingDidFragment`] if no `#` fragment portion is
+    /// present.
     pub fn new(s: impl Into<String>) -> Result<Self, IdError> {
         let s = s.into();
         if s.trim().is_empty() {
@@ -100,6 +107,7 @@ impl DidKeyId {
     }
 
     /// Borrow the full DID URI as a string slice.
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -107,6 +115,7 @@ impl DidKeyId {
     /// Borrow the fragment portion (the characters after `#`). The
     /// `#` itself is **not** included — this matches W3C DID Core's
     /// convention.
+    #[must_use]
     pub fn fragment(&self) -> &str {
         // Safe: ::new guarantees exactly one '#' is present and the
         // fragment portion is non-empty.
@@ -144,6 +153,13 @@ pub struct FragmentId(String);
 
 impl FragmentId {
     /// Validate and construct a `FragmentId`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`IdError::Empty`] if the input is empty or only `#`,
+    /// [`IdError::MissingFragmentPrefix`] if it does not begin with
+    /// `#`, or [`IdError::BadFragmentChars`] if the body contains
+    /// whitespace or ASCII control characters.
     pub fn new(s: impl Into<String>) -> Result<Self, IdError> {
         let s = s.into();
         if s.is_empty() {
@@ -168,6 +184,7 @@ impl FragmentId {
 
     /// Borrow the full fragment reference as a string slice, leading
     /// `#` included.
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -199,6 +216,11 @@ pub struct ServiceId(String);
 
 impl ServiceId {
     /// Validate and construct a `ServiceId`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`IdError::Empty`] if the input is empty or
+    /// whitespace-only.
     pub fn new(s: impl Into<String>) -> Result<Self, IdError> {
         let s = s.into();
         if s.trim().is_empty() {
@@ -208,6 +230,7 @@ impl ServiceId {
     }
 
     /// Borrow the full identifier as a string slice.
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }

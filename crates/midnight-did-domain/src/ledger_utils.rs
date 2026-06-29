@@ -127,6 +127,7 @@ fn has_uri_scheme(value: &str) -> bool {
 
 /// Normalize any fragment-id-shaped string to the leading-`#` form. Bare
 /// fragments are prefixed, DID URLs are reduced to their fragment portion.
+#[must_use]
 pub fn normalize_fragment_id(value: &str) -> String {
     let trimmed = value.trim();
     if trimmed.starts_with('#') {
@@ -141,6 +142,15 @@ pub fn normalize_fragment_id(value: &str) -> String {
 /// Normalize a fragment id that is bound to a specific DID subject. Rejects
 /// inputs whose DID subject does not match `expected_did_subject`, and the
 /// other failure modes called out by [`LedgerUtilsError`].
+///
+/// # Errors
+///
+/// Returns [`LedgerUtilsError::Empty`] for blank input,
+/// [`LedgerUtilsError::NotARelativeOrDidUrl`] when the value cannot be
+/// parsed as a relative reference or DID URL,
+/// [`LedgerUtilsError::EmptyFragment`] when the DID URL has no fragment
+/// portion, or [`LedgerUtilsError::SubjectMismatch`] when the embedded
+/// DID does not match `expected_did_subject`.
 pub fn normalize_bound_fragment_id(
     value: &str,
     field: BoundIdField,
@@ -197,6 +207,15 @@ pub fn normalize_bound_fragment_id(
 /// shape the ledger stores. A single type becomes the value as-is; an array
 /// is JSON-encoded so callers can recover the original list.
 ///
+/// # Errors
+///
+/// Returns [`LedgerUtilsError::EmptyServiceType`] when the single-type
+/// variant is blank, [`LedgerUtilsError::InvalidServiceType`] when the
+/// multi-type array is empty, [`LedgerUtilsError::EmptyServiceTypeEntries`]
+/// when any entry is blank, or
+/// [`LedgerUtilsError::DuplicateServiceTypeEntries`] when entries are not
+/// unique.
+///
 /// # Panics
 ///
 /// Panics only on impossible-by-construction conditions: the
@@ -244,6 +263,7 @@ pub fn service_type_to_ledger(service_type: &ServiceType) -> Result<String, Ledg
 /// `serde_json::to_string` on a normalised `ServiceEndpoint` is total —
 /// every variant contains only strings or maps of strings. A panic here
 /// would indicate a `serde` invariant break, not a runtime input failure.
+#[must_use]
 pub fn service_endpoint_to_ledger(endpoint: ServiceEndpoint) -> String {
     let normalized = normalize_service_endpoint(endpoint);
     serde_json::to_string(&normalized).expect("serialize ServiceEndpoint")
@@ -252,6 +272,12 @@ pub fn service_endpoint_to_ledger(endpoint: ServiceEndpoint) -> String {
 /// Assert that `value` is a syntactically-valid absolute URI (RFC 3986).
 /// Returns the trimmed value on success. Default field label is `aliasUri`,
 /// matching the TS port.
+///
+/// # Errors
+///
+/// Returns [`LedgerUtilsError::Empty`] when the trimmed value is empty,
+/// or [`LedgerUtilsError::NotAbsoluteUri`] when the value does not parse
+/// as an absolute URI.
 pub fn assert_absolute_uri(value: &str, field: Option<&str>) -> Result<String, LedgerUtilsError> {
     let label = field.unwrap_or("aliasUri");
     let alias = value.trim();
