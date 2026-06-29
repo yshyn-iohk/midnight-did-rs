@@ -6,7 +6,7 @@ SPDX-License-Identifier: Apache-2.0
 
 # ADR 0007 — R1 type-safety sweep (v0.2.0)
 
-**Status**: Accepted 2026-06-23. Implemented in v0.2.0 (steps 1, 2, 3, 4a, 5, 6, 7). Steps 4b + 4c deferred to v0.3.0.
+**Status**: Accepted 2026-06-23. Implemented in v0.2.0 (steps 1, 2, 3, 4a, 5, 6, 7). Steps 4b + 4c **closed in v0.3.0** (commits [`0b875a8`](https://github.com/yshyn-iohk/midnight-did-rs/commit/0b875a8) `refactor(api+method): R1-4b — migrate production sites to ::new(NewX)` + [`65ed7f6`](https://github.com/yshyn-iohk/midnight-did-rs/commit/65ed7f6) `domain: R1-4c — privatize struct fields + retire create_* helpers`). v0.3.0 closure complete.
 **Supersedes (partial)**: [ADR 0002 — trait erasure for contract](0002-trait-erasure-for-contract.md), [ADR 0004 — private state as trait](0004-private-state-as-trait.md). R2 will fully address the trait-shape reform; this ADR closes the type-safety side.
 **Related**: [Design spec — R1 type-safety sweep](../specs/2026-06-23-r1-type-safety-sweep-design.md).
 
@@ -52,12 +52,12 @@ the diff focused and the post-cleanup API legible.
 | **R1-7** | `create_did(.., secret_key: [u8; 32])` — drop `Option`, require explicit secret. | Shipped (commit `42aa17f`) |
 | **R1-8** | v0.2.0 lockstep bump + CHANGELOG + this ADR. | Shipped (this commit) |
 
-### Deferred to v0.3.0
+### Closed in v0.3.0
 
-| Step | Change | Why deferred |
+| Step | Change | Status |
 |---|---|---|
-| **R1-4b** | Make `VerificationMethod` / `Service` / `PublicKeyJwk` fields private + add accessor methods. | The load-bearing "invariants unrepresentable" change. M-effort on its own but pairs naturally with 4c. |
-| **R1-4c** | Migrate the ~114 existing direct struct-literal construction sites in domain / api / method / cli / uniffi / tests to `::new(NewX)` and retire the `create_verification_method` / `create_service` free functions. | L-effort mechanical mass-replace. Benefits from a dedicated session — too risky to squeeze into the v0.2.0 window. |
+| **R1-4b** | Make `VerificationMethod` / `Service` / `PublicKeyJwk` (+ `DidString` / `DidUrl` / `RelativeUrl`) fields private + add accessor methods. | Shipped in v0.3.0 ([`0b875a8`](https://github.com/yshyn-iohk/midnight-did-rs/commit/0b875a8)). |
+| **R1-4c** | Migrate the remaining ~17 direct struct-literal construction sites across api / method / cli / tests to `::new(NewX)?` and retire the `create_verification_method` / `create_service` free functions. | Shipped in v0.3.0 ([`65ed7f6`](https://github.com/yshyn-iohk/midnight-did-rs/commit/65ed7f6)). 4 negative test fixtures that previously asserted on `verification_method_to_ledger`'s rejection path now assert on `PublicKeyJwk::new`'s error path directly. |
 
 The 4a path (additive `::new(NewX)` constructors with the legacy
 factories continuing to work) **lets v0.2.0 ship the new API surface
@@ -90,10 +90,11 @@ mass-replace can land coherently in one focused commit.
   documented per-section in [CHANGELOG.md](../../CHANGELOG.md) under
   the v0.2.0 entry; no deprecation shims (the cost of dual-API
   maintenance outweighed the benefit for an early-stage crate).
-- **Steps 4b/4c not yet shipped** — callers can still construct
-  `VerificationMethod { id: ..., ... }` directly, bypassing `::new`'s
-  validation. The v0.2.0 surface *recommends* `::new`; v0.3.0 will
-  *require* it via private fields.
+- **Steps 4b/4c closed in v0.3.0** — callers can no longer construct
+  `VerificationMethod { id: ..., ... }` directly. The only way to
+  construct these types is `::new(NewX)` or the validating
+  `Deserialize` path. The "deserialize then forget validate" footgun
+  is closed.
 - **`HashOutput::Display` is truncated upstream** (10-char log
   preview). Anywhere we need full-hex round-trip we now go through
   `HashOutputExt::to_hex`. Confused-cousin risk if a caller uses
@@ -145,9 +146,10 @@ narrow. Concrete migrations:
 ## References
 
 - [ADR 0001 — async-only API](0001-async-only-api.md) — kept, reaffirmed by audit
-- [ADR 0002 — trait erasure for contract](0002-trait-erasure-for-contract.md) — partial supersede; full reform in R2
+- [ADR 0002 — trait erasure for contract](0002-trait-erasure-for-contract.md) — fully superseded by ADR 0008
 - [ADR 0003 — crate split 2→4 + umbrella](0003-crate-split-2-to-4-with-umbrella.md) — unchanged
-- [ADR 0004 — private state as trait](0004-private-state-as-trait.md) — partial supersede; full reform in R2
+- [ADR 0004 — private state as trait](0004-private-state-as-trait.md) — partially superseded by ADR 0008
 - [ADR 0005 — codegen gap handling](0005-codegen-gap-handling.md) — unchanged
-- [ADR 0006 — runtime crate halo2 block](0006-runtime-crate-halo2-block.md) — unchanged
+- [ADR 0006 — runtime crate halo2 block](0006-runtime-crate-halo2-block.md) — closed in v0.3.0
+- [ADR 0008 — R2 contract-abstraction reform](0008-contract-abstraction-reform.md) — landed in v0.4.0 (the full trait-shape reform R1 anticipated)
 - [Design spec — R1 type-safety sweep](../specs/2026-06-23-r1-type-safety-sweep-design.md)

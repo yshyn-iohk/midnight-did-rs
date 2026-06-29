@@ -1,8 +1,28 @@
-# ADR 0006 — Runtime crate halo2 ParamsKZG API skew (unblocked, partial)
+# ADR 0006 — Runtime crate halo2 ParamsKZG API skew (closed)
 
-**Status:** Halo2 block resolved · 4-bucket codegen block: 1/4 closed,
-2/4 landed-but-blocked, 1/4 documented (this ADR)
-**Date:** 2026-06-04 (updated 2026-06-04 after Bucket-3 close)
+**Status:** Closed in v0.3.0. Halo2 patch active and justified (pinned
+by `rev` against `yshyn-iohk/midnight-zk@feat/v0.7-h-poly-streaming`).
+All four codegen buckets resolved: Bucket 1 (ContractAddress FQN) +
+Bucket 4 (user-enum `Default` derive) landed via compact pin
+`960fc26`; Bucket 3 (`OpaqueString::BinaryHashRepr`) landed earlier
+via the runtime-rs `3d23c9a` commit; Bucket 2 (`EmbeddedGroupAffine`
+trait impls) closed via subsequent compact codegen-rust work in the
+A1–A21 walker-gap closure cycle (see ADR 0005). `cargo check -p
+midnight-did-runtime` is now green; the runtime crate is in CI as of
+v0.3.0.
+**Date:** 2026-06-04 (closure status updated 2026-06-25 after v0.3.0)
+
+> The `[patch.crates-io] midnight-proofs = { git, rev }` entry in
+> the workspace `Cargo.toml` is **still active** — the patched
+> 0.7.99 fork is the single workspace-wide version and ships the
+> `read_mmap_arc` / `write_mmap_companion` / `read_custom_lazy`
+> methods that upstream `midnight-ledger`'s
+> `transient-crypto/src/proofs.rs` calls. Removing the patch would
+> re-break the build. The "how to refresh the pin" section below
+> still applies. The historical 4-bucket walkthrough that follows
+> is preserved for record-keeping; it captures the resolution
+> sequence from the halo2 unblock through the codegen-rust walker
+> generalisation work that finished in v0.3.0.
 
 ## Context
 

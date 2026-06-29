@@ -6,8 +6,17 @@ SPDX-License-Identifier: Apache-2.0
 
 # ADR 0004 — Private state as a trait
 
-**Status:** Accepted
-**Date:** 2026-06-03
+**Status:** Partially superseded by [ADR 0008](./0008-contract-abstraction-reform.md) in v0.4.0
+**Date:** 2026-06-03 (status updated 2026-06-25)
+
+> v0.4.0's `Backend::submit_tx` no longer threads private state —
+> Path 2 (typed `DidContractCall` envelope over `BuiltTx::bytes`)
+> sidesteps the in-circuit invocation entirely. The
+> `PrivateStateStore` trait shape from this ADR remains the
+> rationale; private state will re-enter via a `DidWitnesses` impl
+> over `DidPrivateState` when `LiveBackend::submit_tx` is wired
+> against `generated::Contract<PS, W>` (ADR 0008 Future Work item
+> 4). The text below is preserved as the original rationale.
 
 ## Context
 

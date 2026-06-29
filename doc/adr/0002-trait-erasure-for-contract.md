@@ -6,8 +6,17 @@ SPDX-License-Identifier: Apache-2.0
 
 # ADR 0002 — Trait erasure for contract calls (`DidContract`)
 
-**Status:** Accepted
-**Date:** 2026-06-03
+**Status:** Superseded by [ADR 0008](./0008-contract-abstraction-reform.md) in v0.4.0
+**Date:** 2026-06-03 (superseded 2026-06-25)
+
+> v0.4.0 retired the `DidContract` async trait + the
+> `mock::RecordingContract` mock. The api crate now takes
+> `&Contract<B: Backend>` directly (concrete wrapper in
+> `midnight-did-runtime`), with a 14-variant `DidContractCall`
+> envelope transported through `BuiltTx::bytes`. See
+> [ADR 0008](./0008-contract-abstraction-reform.md) for the
+> rationale (Path 2) and the migration shape. The text below is
+> preserved as the v0.1–v0.3 rationale.
 
 ## Context
 
