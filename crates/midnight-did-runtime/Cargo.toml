@@ -23,14 +23,15 @@ compact-runtime = { workspace = true }
 # compact-runtime) needs at link time. Listed explicitly so `cargo build`
 # fails with a clearer error if a symlink under third_party/midnight-ledger/
 # goes missing.
+#
+# Pruned 2026-06-29: cargo-machete flagged six ledger-stack crates as
+# unused at the source level — they are pulled in transitively via
+# `compact-runtime`'s own manifest, so declaring them explicitly here was
+# redundant. The two kept below are the load-bearing pair the generated.rs
+# path-mounted output names directly; they stay as an early-failure
+# tripwire when a third_party/midnight-ledger symlink is missing.
 midnight-base-crypto      = { workspace = true }
-midnight-coin-structure   = { workspace = true }
 midnight-onchain-runtime  = { workspace = true }
-midnight-onchain-state    = { workspace = true }
-midnight-onchain-vm       = { workspace = true }
-midnight-serialize        = { workspace = true }
-midnight-storage          = { workspace = true }
-midnight-transient-crypto = { workspace = true }
 
 # Sibling first-party crates — R2-2 (v0.4.0) lifts ledger-shape types
 # (`DidLedgerSnapshot`, `LedgerVerificationMethod`, `MapMutation`, …) into
