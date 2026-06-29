@@ -18,6 +18,81 @@ from `todo!()` stubs into production paths. See
 [doc/adr/0008-contract-abstraction-reform.md](doc/adr/0008-contract-abstraction-reform.md)
 ("Future work") for the four-step closure plan.
 
+## [0.4.1] — 2026-06-26
+
+### Overview
+
+`0.4.1` is the **builder + decode validation closure** patch. It
+locks both sides of `BuiltTx::bytes` for the SchnorrJubjub
+ledger-shape types — callers can no longer struct-literal a
+malformed value (encoding side), and an incoming envelope decoded
+via `RecordingBackend::submit_tx` (or any future `LiveBackend`)
+cannot land a malformed inner value either (decoding side). Wire
+format remains byte-identical with v0.4.0 for valid inputs.
+
+Surfaces a real correctness finding from the architecture audit
+(2026-06-26 `docs/superpowers/notes/2026-06-26-architecture-audit.md`
+Rec #1): three at-risk ledger-shape types had public `String` /
+`[String; 4]` fields that accepted arbitrary garbage in test
+fixtures. The fix closes the bypass on both encode and decode
+sides.
+
+### Added
+
+- **Validating `::new` constructors** on `JubjubPointHex`,
+  `SchnorrJubjubSignature`, `SchnorrJubjubDigest`, and the
+  api-layer `SchnorrJubjubVerificationMethod` wrapper. Each
+  rejects malformed hex / wrong byte length / empty id at
+  construction time.
+- **Decode-side validation gates** via
+  `#[serde(try_from = "Repr")]` shims on
+  `JubjubPointHex` + `SchnorrJubjubSignature`, plus a hand-rolled
+  `Deserialize` on the `#[serde(transparent)]`
+  `SchnorrJubjubDigest` (transparent + try_from are mutually
+  exclusive — the hand-rolled impl pulls `<[String; 4]>::deserialize`
+  then runs `::new`).
+- **34 new regression tests** across two files:
+  - `crates/midnight-did-api/tests/builder_validation.rs` —
+    19 encode-side tests (`"01"` short coord, `"deadbeef"` short
+    sig, `"1"` short digest limb, empty id).
+  - `crates/midnight-did-api/tests/decode_validation.rs` —
+    15 decode-side tests: 10 negative cases (legacy stubs
+    decode → reject), 3 positive round-trip
+    (encode → decode → re-encode is byte-identical), 2
+    envelope-level tests (the gate applies transitively when
+    `DidContractCall::decode` walks a malformed JSON payload).
+
+### Changed
+
+- **`JubjubPointHex`, `SchnorrJubjubSignature`, `SchnorrJubjubDigest`
+  fields are now private.** Callers must use `::new(NewX)?` (or
+  decode through the validating Deserialize path) — struct-literal
+  construction of these types is no longer possible.
+- **`SchnorrJubjubVerificationMethod`** wrapper gets a fallible
+  `::new(NewSchnorrJubjubVerificationMethod) -> Result<Self,
+  ApiError>` constructor enforcing non-empty `id`.
+
+### Developer experience
+
+- **Justfile `codegen` recipe path fix** — recipe targeted
+  `crates/midnight-did/src/contract/` (pre-4-crate-split, ADR 0003);
+  now correctly targets `crates/midnight-did-runtime/src/contract/`
+  matching the v0.4.0 crate layout. `just codegen` and
+  `just codegen-check` now work end-to-end again.
+
+### References
+
+- ADR 0008 ("Builder + decode validation gate" section):
+  [doc/adr/0008-contract-abstraction-reform.md](doc/adr/0008-contract-abstraction-reform.md)
+- Architecture audit Rec #1 (the finding):
+  `docs/superpowers/notes/2026-06-26-architecture-audit.md`
+- Encoding-side commit:
+  [`59ed1f5`](https://github.com/yshyn-iohk/midnight-did-rs/commit/59ed1f5)
+- Decoding-side commits:
+  [`b3fdb20`](https://github.com/yshyn-iohk/midnight-did-rs/commit/b3fdb20),
+  [`3080d49`](https://github.com/yshyn-iohk/midnight-did-rs/commit/3080d49),
+  [`8d9df0d`](https://github.com/yshyn-iohk/midnight-did-rs/commit/8d9df0d)
+
 ## [0.4.0] — 2026-06-25
 
 ### Overview

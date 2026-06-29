@@ -3,7 +3,7 @@ resolver = "3"
 members  = ["crates/midnight-did", "crates/midnight-did-api", "crates/midnight-did-cli", "crates/midnight-did-domain", "crates/midnight-did-method", "crates/midnight-did-runtime", "crates/midnight-did-uniffi"]
 
 [workspace.package]
-version      = "0.4.0"
+version      = "0.4.1"
 edition      = "2024"
 rust-version = "1.85"
 license      = "Apache-2.0"
@@ -34,20 +34,20 @@ serde      = { version = "1", features = ["derive"] }
 serde_json = "1"
 hex        = "0.4"
 # domain crate (pure-data Midnight DID types)
-# `version = "=0.4.0"` is required for `cargo publish` to accept midnight-did-api's
+# `version = "=0.4.1"` is required for `cargo publish` to accept midnight-did-api's
 # manifest — crates.io rejects path-only dependencies. The `=` pin keeps the two
 # crates lock-stepped: bumping midnight-did-api to 0.1.1 must also bump
 # midnight-did-domain to 0.1.1. Same pattern as compact-runtime + compact-runtime-macros
 # in the codegen-rust toolchain.
-midnight-did-domain  = { path = "crates/midnight-did-domain",  version = "=0.4.0" }
+midnight-did-domain  = { path = "crates/midnight-did-domain",  version = "=0.4.1" }
 # method crate — Midnight method profile + LedgerToDomain mapper + network mapping.
-midnight-did-method  = { path = "crates/midnight-did-method",  version = "=0.4.0" }
+midnight-did-method  = { path = "crates/midnight-did-method",  version = "=0.4.1" }
 # api crate — consumed by the reference CLI + (future) downstream tooling
-midnight-did-api     = { path = "crates/midnight-did-api",     version = "=0.4.0" }
+midnight-did-api     = { path = "crates/midnight-did-api",     version = "=0.4.1" }
 # runtime crate — codegen target (currently blocked on upstream halo2 skew).
-midnight-did-runtime = { path = "crates/midnight-did-runtime", version = "=0.4.0" }
+midnight-did-runtime = { path = "crates/midnight-did-runtime", version = "=0.4.1" }
 # umbrella crate — re-exports the full 4-crate stack for monolithic consumers.
-midnight-did         = { path = "crates/midnight-did",         version = "=0.4.0" }
+midnight-did         = { path = "crates/midnight-did",         version = "=0.4.1" }
 
 # ---- Patch crates.io's `midnight-proofs` with the local fork ----
 #
