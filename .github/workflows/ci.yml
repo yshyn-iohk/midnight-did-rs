@@ -31,6 +31,11 @@ on:
       - "crates/midnight-did-method/**"
       - "crates/midnight-did-api/**"
       - "crates/midnight-did/**"
+      - "crates/midnight-did-runtime/src/contract/**"
+      - "third_party/midnight-did/**"
+      - "flake.nix"
+      - "flake.lock"
+      - "Justfile"
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/ci.yml"
@@ -42,6 +47,11 @@ on:
       - "crates/midnight-did-method/**"
       - "crates/midnight-did-api/**"
       - "crates/midnight-did/**"
+      - "crates/midnight-did-runtime/src/contract/**"
+      - "third_party/midnight-did/**"
+      - "flake.nix"
+      - "flake.lock"
+      - "Justfile"
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/ci.yml"
@@ -230,3 +240,35 @@ jobs:
             -p midnight-did-api \
             -p midnight-did \
             --locked
+
+  # Regenerate generated.rs from did.compact via the flake-pinned compactc
+  # and assert no drift against the committed file. This is the standing
+  # gate after the codegen-correctness sweep: if the upstream compact
+  # patch set changes the emitted Rust shape, this job fails so the
+  # divergence cannot land silently.
+  #
+  # The work happens inside `nix develop` so we get the exact compactc
+  # pinned by flake.lock (input: github:yshyn-iohk/compact/codegen-rust).
+  # `just codegen-check` runs `just codegen` then `git diff --exit-code`
+  # on crates/midnight-did-runtime/src/contract and assets/keys — any
+  # byte-level drift makes git return non-zero, failing the job.
+  codegen-check:
+    name: Codegen regen check (did.compact -> generated.rs)
+    needs: pre-check
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: recursive
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Magic Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Run codegen and assert no drift
+        run: nix develop --command just codegen-check
