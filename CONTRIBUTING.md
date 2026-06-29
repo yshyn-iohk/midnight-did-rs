@@ -15,10 +15,10 @@ mobile (via UniFFI), and `wasm32-unknown-unknown` in the browser.
 Before diving in, please skim:
 
 - [`doc/architecture.md`](./doc/architecture.md) — the living overview of
-  the workspace, the 4-crate split, and the design patterns.
+  the workspace, the 5-crate split, and the design patterns.
 - [`doc/adr/`](./doc/adr/) — Architecture Decision Records covering the
-  load-bearing choices (async-only API, trait-erased contract, crate
-  layout, private-state trait, codegen gap handling).
+  load-bearing choices (async-only API, `Contract<B: Backend>` shape,
+  crate layout, private-state trait, codegen gap handling).
 
 The rest of this guide is the practical dev loop and the conventions
 we expect every PR to follow.
