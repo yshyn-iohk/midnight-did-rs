@@ -19,18 +19,18 @@ codegen:
     compactc --rust --skip-ts \
         third_party/midnight-did/packages/contract/src/did.compact \
         target-gen/contract-out
-    @mkdir -p crates/midnight-did/src/contract
-    cp target-gen/contract-out/contract/lib.rs crates/midnight-did/src/contract/generated.rs
-    @mkdir -p crates/midnight-did/assets/keys
+    @mkdir -p crates/midnight-did-runtime/src/contract
+    cp target-gen/contract-out/contract/lib.rs crates/midnight-did-runtime/src/contract/generated.rs
+    @mkdir -p crates/midnight-did-runtime/assets/keys
     # Recursive find picks up keys whether they live in keys/, zkir/, or contract/.
-    find target-gen/contract-out -name "*.zkir"     -exec cp {} crates/midnight-did/assets/keys/ \;
-    find target-gen/contract-out -name "*.prover"   -exec cp {} crates/midnight-did/assets/keys/ \;
-    find target-gen/contract-out -name "*.verifier" -exec cp {} crates/midnight-did/assets/keys/ \;
-    cargo fmt -p midnight-did
+    find target-gen/contract-out -name "*.zkir"     -exec cp {} crates/midnight-did-runtime/assets/keys/ \;
+    find target-gen/contract-out -name "*.prover"   -exec cp {} crates/midnight-did-runtime/assets/keys/ \;
+    find target-gen/contract-out -name "*.verifier" -exec cp {} crates/midnight-did-runtime/assets/keys/ \;
+    cargo fmt -p midnight-did-runtime
 
 # Verify re-running codegen produces no diff (regression signal for CI).
 codegen-check: codegen
-    git diff --exit-code -- crates/midnight-did/src/contract crates/midnight-did/assets/keys
+    git diff --exit-code -- crates/midnight-did-runtime/src/contract crates/midnight-did-runtime/assets/keys
 
 build:
     cargo build --all-targets
