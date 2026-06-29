@@ -48,6 +48,12 @@ pub struct DidServiceHandle {
 #[uniffi::export]
 impl DidServiceHandle {
     /// Construct a new handle backed by the in-memory mock contract.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the `DEFAULT_ADDRESS` compile-time constant ever
+    /// stops parsing as a valid contract address — a developer-error
+    /// case, not a runtime failure surfaced through FFI.
     #[uniffi::constructor]
     pub fn new() -> Arc<Self> {
         Arc::new(Self {

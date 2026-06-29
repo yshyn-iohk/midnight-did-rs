@@ -135,6 +135,12 @@ pub struct FlowDriver {
 
 impl FlowDriver {
     /// Build a driver seeded with the initial ledger snapshot.
+    ///
+    /// # Panics
+    ///
+    /// Panics only if the `CONTRACT_ADDRESS` compile-time constant ever
+    /// stops parsing as a valid contract address — a developer-error
+    /// case, not a runtime failure mode.
     pub fn new() -> Self {
         Self {
             contract: Contract::new(
@@ -157,6 +163,12 @@ impl FlowDriver {
     }
 
     /// Apply a transform to the current ledger snapshot and reinstall it.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `RecordingBackend::read_snapshot` ever returns `Err` —
+    /// the mock backend declares itself infallible, so this would
+    /// indicate a contract-shape bug, not a runtime input failure.
     async fn mutate_ledger<F>(&self, mutate: F) -> DidLedgerSnapshot
     where
         F: FnOnce(&mut DidLedgerSnapshot),

@@ -196,6 +196,14 @@ pub fn normalize_bound_fragment_id(
 /// Encode the polymorphic service `type` property into the single-string
 /// shape the ledger stores. A single type becomes the value as-is; an array
 /// is JSON-encoded so callers can recover the original list.
+///
+/// # Panics
+///
+/// Panics only on impossible-by-construction conditions: the
+/// `normalized.into_iter().next().unwrap()` is guarded by
+/// `if normalized.len() == 1`, and `serde_json::to_string` on a
+/// `Vec<String>` is total. A panic here would indicate a logic bug in
+/// this function, not a fallible runtime input.
 pub fn service_type_to_ledger(service_type: &ServiceType) -> Result<String, LedgerUtilsError> {
     match service_type {
         ServiceType::One(s) => {
@@ -230,6 +238,12 @@ pub fn service_type_to_ledger(service_type: &ServiceType) -> Result<String, Ledg
 
 /// Encode a service endpoint as the JSON-encoded canonical string the ledger
 /// uses. Performs URI normalization on every nested string.
+///
+/// # Panics
+///
+/// `serde_json::to_string` on a normalised `ServiceEndpoint` is total —
+/// every variant contains only strings or maps of strings. A panic here
+/// would indicate a `serde` invariant break, not a runtime input failure.
 pub fn service_endpoint_to_ledger(endpoint: ServiceEndpoint) -> String {
     let normalized = normalize_service_endpoint(endpoint);
     serde_json::to_string(&normalized).expect("serialize ServiceEndpoint")

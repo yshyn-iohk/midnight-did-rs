@@ -79,6 +79,14 @@ pub fn did_subject() -> String {
 /// Sample P-256 JWK used by the JsonWebKey verification method. The
 /// coordinates are fixed (32 zero bytes for `x`, 32 `0x11` bytes for `y`)
 /// so the cross-language fixtures can be compared field-by-field.
+///
+/// # Panics
+///
+/// Panics if the compile-time inputs ever stop matching the
+/// `PublicKeyJwk::new` validation rules (e.g. someone edits the
+/// coordinate bytes here without updating the validator). Production
+/// callers always feed validated data through `PublicKeyJwk::new`
+/// directly; this function exists for byte-parity fixtures only.
 pub fn sample_jwk() -> PublicKeyJwk {
     PublicKeyJwk::new(NewPublicKeyJwk {
         kty: KeyType::EC,
@@ -91,6 +99,14 @@ pub fn sample_jwk() -> PublicKeyJwk {
 }
 
 /// Build the `VerificationMethod` value used by the JWK insert step.
+///
+/// # Panics
+///
+/// Panics if the static fixture stops satisfying
+/// `VerificationMethod::new` (e.g. someone changes the fragment, the
+/// JWK, or the subject derivation in a way that breaks the validator).
+/// Fixture-only path; production code constructs `VerificationMethod`
+/// through validated builders.
 pub fn sample_verification_method() -> VerificationMethod {
     let subject = did_subject();
     VerificationMethod::new(NewVerificationMethod {
@@ -118,6 +134,12 @@ pub fn sample_ledger_verification_method() -> LedgerVerificationMethod {
 }
 
 /// Build the demo `LinkedDomains` service entry.
+///
+/// # Panics
+///
+/// Panics if the static fixture stops satisfying `Service::new` (e.g.
+/// someone changes the id, type, or endpoint URL in a way that breaks
+/// the validator). Fixture-only path.
 pub fn sample_service() -> Service {
     Service::new(NewService {
         id: SERVICE_ID.to_string(),

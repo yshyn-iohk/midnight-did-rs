@@ -134,6 +134,13 @@ pub enum PrivateStateError {
 /// can faithfully exercise the "address-not-set" code path; the in-memory
 /// store still serves reads/writes if the address is unset (TS providers
 /// surface that as a runtime error — replicated below).
+///
+/// # Panics
+///
+/// Every method takes `self.inner.lock().unwrap()`. `Mutex::lock` only
+/// fails when the mutex is poisoned (a previous holder panicked while
+/// holding it); that is a programming error, not a fallible runtime
+/// condition, so the panic is intentional.
 #[derive(Debug, Default)]
 pub struct InMemoryPrivateStateStore {
     inner: Mutex<InMemoryInner>,
