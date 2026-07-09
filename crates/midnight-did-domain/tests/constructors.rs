@@ -24,12 +24,13 @@
 //! for each constructor — invalid inputs must error, not silently
 //! construct.
 
+use std::collections::BTreeMap;
+
 use midnight_did_domain::did_document::{
     CurveType, KeyType, NewPublicKeyJwk, NewService, NewVerificationMethod, PublicKeyJwk, Service, ServiceEndpoint,
     ServiceType, VerificationMethod, VerificationMethodType,
 };
 use serde_json::json;
-use std::collections::BTreeMap;
 
 // ---- PublicKeyJwk --------------------------------------------------
 

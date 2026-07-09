@@ -29,11 +29,12 @@
 //! These tests pin the happy-path build + each cross-reference
 //! reject path explicitly.
 
-use midnight_did_domain::did_document::{
-    CurveType, DidDocumentBuilder, DidKeyId, KeyType, NewPublicKeyJwk, NewService, NewVerificationMethod,
-    PublicKeyJwk, ServiceEndpoint, ServiceType, VerificationMethod, VerificationMethodType,
-};
 use std::collections::BTreeMap;
+
+use midnight_did_domain::did_document::{
+    CurveType, DidDocumentBuilder, DidKeyId, KeyType, NewPublicKeyJwk, NewService, NewVerificationMethod, PublicKeyJwk,
+    ServiceEndpoint, ServiceType, VerificationMethod, VerificationMethodType,
+};
 
 fn ed25519_jwk() -> PublicKeyJwk {
     PublicKeyJwk::new(NewPublicKeyJwk {
@@ -132,8 +133,10 @@ fn builder_rejects_authentication_referencing_unknown_vm() {
         .build()
         .unwrap_err();
     let msg = format!("{err}");
-    assert!(msg.contains("authentication") || msg.contains("verificationMethod"),
-        "expected message about dangling reference, got: {msg}");
+    assert!(
+        msg.contains("authentication") || msg.contains("verificationMethod"),
+        "expected message about dangling reference, got: {msg}"
+    );
 }
 
 #[test]
@@ -157,8 +160,10 @@ fn builder_rejects_duplicate_verification_method_ids() {
         .build()
         .unwrap_err();
     let msg = format!("{err}");
-    assert!(msg.contains("duplicate") || msg.contains("verificationMethod"),
-        "expected duplicate-id error, got: {msg}");
+    assert!(
+        msg.contains("duplicate") || msg.contains("verificationMethod"),
+        "expected duplicate-id error, got: {msg}"
+    );
 }
 
 #[test]
