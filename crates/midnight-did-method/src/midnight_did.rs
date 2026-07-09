@@ -42,10 +42,10 @@
 
 pub use compact_runtime::ContractAddress;
 pub use midnight_base_crypto::hash::HashOutput as OffchainStateHashHex;
-
-use crate::hex_ext::HashOutputExt;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+use crate::hex_ext::HashOutputExt;
 
 /// Networks the Midnight method recognises.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

@@ -20,11 +20,12 @@
 //! is carried by the [`midnight_did_runtime::Contract`] instance so callers
 //! pass it explicitly. This keeps the helpers pure and testable.
 
-use crate::error::ApiError;
 use midnight_did_domain::ledger_utils::{BoundIdField, normalize_bound_fragment_id};
 use midnight_did_method::hex_ext::HashOutputExt;
 use midnight_did_method::midnight_did::{ContractAddress, MidnightNetwork, create_midnight_did_string};
 use midnight_did_runtime::{Backend, Contract};
+
+use crate::error::ApiError;
 
 /// `getDidSubject(didContract)` — return the canonical
 /// `did:midnight:<network>:<address>` for the contract.
@@ -54,9 +55,10 @@ pub fn get_did_subject_for(address: &ContractAddress, network: MidnightNetwork) 
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use midnight_did_method::midnight_did::parse_contract_address;
     use midnight_did_runtime::RecordingBackend;
+
+    use super::*;
 
     const ADDR: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 

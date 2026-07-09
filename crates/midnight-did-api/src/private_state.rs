@@ -32,9 +32,10 @@
 //! - `recoverPendingControllerPrivateState` — [`recover_pending_controller_private_state`].
 //! - `isRestorableDIDPrivateState` — [`is_restorable_did_private_state`].
 
-use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Mutex;
+
+use async_trait::async_trait;
 
 use crate::error::ApiError;
 

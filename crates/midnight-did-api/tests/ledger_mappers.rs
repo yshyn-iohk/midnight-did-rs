@@ -24,17 +24,15 @@
 
 use std::collections::BTreeMap;
 
-use midnight_did_api::{
-    contract::{DidLedgerSnapshot, LedgerVerificationMethodRelation},
-    error::ApiError,
-    ledger_mappers::{public_key_jwk_to_ledger, relation_set_from_state, verification_method_to_ledger},
+use midnight_did_api::contract::{DidLedgerSnapshot, LedgerVerificationMethodRelation};
+use midnight_did_api::error::ApiError;
+use midnight_did_api::ledger_mappers::{
+    public_key_jwk_to_ledger, relation_set_from_state, verification_method_to_ledger,
 };
-use midnight_did_domain::{
-    crypto_codecs::encode_base64url,
-    did_document::{
-        CurveType, KeyType, NewPublicKeyJwk, NewVerificationMethod, PublicKeyJwk, VerificationMethod,
-        VerificationMethodRelation, VerificationMethodType,
-    },
+use midnight_did_domain::crypto_codecs::encode_base64url;
+use midnight_did_domain::did_document::{
+    CurveType, KeyType, NewPublicKeyJwk, NewVerificationMethod, PublicKeyJwk, VerificationMethod,
+    VerificationMethodRelation, VerificationMethodType,
 };
 use midnight_did_method::midnight_did::{MidnightNetwork, parse_contract_address};
 use midnight_did_runtime::{Contract, RecordingBackend};

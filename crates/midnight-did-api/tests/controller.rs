@@ -35,13 +35,11 @@
 use std::sync::Mutex;
 
 use async_trait::async_trait;
-use midnight_did_api::{
-    controller_operations::rotate_controller_key,
-    error::{ApiError, ContractError},
-    private_state::{
-        DidPrivateState, InMemoryPrivateStateStore, PrivateStateError, PrivateStateSlot, PrivateStateStore,
-        restore_private_state,
-    },
+use midnight_did_api::controller_operations::rotate_controller_key;
+use midnight_did_api::error::{ApiError, ContractError};
+use midnight_did_api::private_state::{
+    DidPrivateState, InMemoryPrivateStateStore, PrivateStateError, PrivateStateSlot, PrivateStateStore,
+    restore_private_state,
 };
 use midnight_did_method::midnight_did::{MidnightNetwork, parse_contract_address};
 use midnight_did_runtime::{
@@ -101,7 +99,9 @@ async fn surfaces_storage_failure_before_invoking_circuit() {
 
     let calls = contract.backend.recorded_calls();
     assert!(
-        !calls.iter().any(|c| matches!(c, DidContractCall::RotateControllerKey { .. })),
+        !calls
+            .iter()
+            .any(|c| matches!(c, DidContractCall::RotateControllerKey { .. })),
         "circuit must not run when pending write fails first: {calls:?}"
     );
 }
@@ -140,7 +140,10 @@ async fn keeps_pending_when_active_promotion_fails() {
         .await
         .unwrap_err();
     assert!(
-        matches!(err, ApiError::Controller(midnight_did_api::error::ControllerError::RotationOrphaned(_))),
+        matches!(
+            err,
+            ApiError::Controller(midnight_did_api::error::ControllerError::RotationOrphaned(_))
+        ),
         "expected ControllerRotationOrphaned, got {err}"
     );
 
@@ -261,7 +264,8 @@ impl Backend for FailingBackend {
 
     async fn read_state(
         &self,
-    ) -> Result<midnight_did_runtime::backend::RawChargedState<midnight_did_runtime::backend::RawDb>, BackendError> {
+    ) -> Result<midnight_did_runtime::backend::RawChargedState<midnight_did_runtime::backend::RawDb>, BackendError>
+    {
         unimplemented!("not used by controller tests")
     }
 

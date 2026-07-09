@@ -79,14 +79,20 @@ fn verification_error_lifts_into_api_error() {
         method_id: "#k".to_string(),
     };
     let api_err: ApiError = domain_err.into();
-    assert!(matches!(api_err, ApiError::Verification(VerificationError::RelationMissing { .. })));
+    assert!(matches!(
+        api_err,
+        ApiError::Verification(VerificationError::RelationMissing { .. })
+    ));
 }
 
 #[test]
 fn controller_error_lifts_into_api_error() {
     let domain_err = ControllerError::InvalidSecretKey;
     let api_err: ApiError = domain_err.into();
-    assert!(matches!(api_err, ApiError::Controller(ControllerError::InvalidSecretKey)));
+    assert!(matches!(
+        api_err,
+        ApiError::Controller(ControllerError::InvalidSecretKey)
+    ));
 }
 
 #[test]
@@ -113,8 +119,10 @@ fn umbrella_caller() -> Result<(), ApiError> {
 #[test]
 fn question_mark_operator_threads_domain_error_into_umbrella() {
     let result = umbrella_caller();
-    assert!(matches!(result,
-        Err(ApiError::Verification(VerificationError::RelationMissing { .. }))));
+    assert!(matches!(
+        result,
+        Err(ApiError::Verification(VerificationError::RelationMissing { .. }))
+    ));
 }
 
 // ---- Display passthrough -------------------------------------------

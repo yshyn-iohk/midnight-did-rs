@@ -32,9 +32,7 @@
 //! Each type also has a positive round-trip case to confirm valid inputs
 //! still encode → decode → encode byte-identical.
 
-use midnight_did_api::contract::{
-    JubjubPointHex, NewJubjubPointHex, SchnorrJubjubDigest, SchnorrJubjubSignature,
-};
+use midnight_did_api::contract::{JubjubPointHex, NewJubjubPointHex, SchnorrJubjubDigest, SchnorrJubjubSignature};
 
 /// 64-char (= 32-byte) hex placeholder used as a valid coordinate / limb.
 fn valid_coord() -> String {
@@ -107,8 +105,7 @@ fn jubjub_point_hex_round_trip_byte_identical() {
 fn schnorr_jubjub_signature_decode_rejects_short_bytes_hex() {
     // `"deadbeef"` is the same legacy stub flagged by the encoding-side audit.
     let json = r#"{"bytes_hex":"deadbeef"}"#;
-    let err =
-        serde_json::from_str::<SchnorrJubjubSignature>(json).expect_err("short signature must fail decode");
+    let err = serde_json::from_str::<SchnorrJubjubSignature>(json).expect_err("short signature must fail decode");
     assert!(err.to_string().contains("SchnorrJubjubSignature.bytes_hex"));
 }
 
@@ -147,8 +144,7 @@ fn schnorr_jubjub_digest_decode_rejects_short_limb() {
     // … }` rather than `WrongByteLength`.
     let coord = valid_coord();
     let json = format!(r#"["1","{coord}","{coord}","{coord}"]"#);
-    let err =
-        serde_json::from_str::<SchnorrJubjubDigest>(&json).expect_err("short limb must fail decode");
+    let err = serde_json::from_str::<SchnorrJubjubDigest>(&json).expect_err("short limb must fail decode");
     assert!(err.to_string().contains("SchnorrJubjubDigest[0]"));
 }
 
@@ -171,13 +167,8 @@ fn schnorr_jubjub_digest_decode_rejects_empty_limb() {
 
 #[test]
 fn schnorr_jubjub_digest_round_trip_byte_identical() {
-    let digest = SchnorrJubjubDigest::new([
-        "00".repeat(32),
-        "11".repeat(32),
-        "22".repeat(32),
-        "33".repeat(32),
-    ])
-    .expect("valid 4 × 32-byte limbs");
+    let digest = SchnorrJubjubDigest::new(["00".repeat(32), "11".repeat(32), "22".repeat(32), "33".repeat(32)])
+        .expect("valid 4 × 32-byte limbs");
     let encoded_once = serde_json::to_string(&digest).expect("serialise");
     let decoded: SchnorrJubjubDigest = serde_json::from_str(&encoded_once).expect("round-trip decode");
     let encoded_twice = serde_json::to_string(&decoded).expect("re-serialise");
@@ -213,8 +204,8 @@ fn did_contract_call_decode_rejects_malformed_signature_in_verify_variant() {
             }}
         }}"##
     );
-    let err = DidContractCall::decode(payload.as_bytes())
-        .expect_err("malformed inner signature must fail envelope decode");
+    let err =
+        DidContractCall::decode(payload.as_bytes()).expect_err("malformed inner signature must fail envelope decode");
     assert!(
         err.to_string().contains("DidContractCall"),
         "decode error should surface as the envelope-level BackendError::Decode, got: {err}"

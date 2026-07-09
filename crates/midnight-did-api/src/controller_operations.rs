@@ -25,13 +25,11 @@
 
 use midnight_did_runtime::{Backend, Contract};
 
-use crate::{
-    contract::FinalizedTxData,
-    error::{ApiError, ContractError},
-    private_state::{
-        DidPrivateState, PrivateStateSlot, PrivateStateStore, clear_pending_controller_private_state,
-        save_pending_controller_private_state, save_private_state,
-    },
+use crate::contract::FinalizedTxData;
+use crate::error::{ApiError, ContractError};
+use crate::private_state::{
+    DidPrivateState, PrivateStateSlot, PrivateStateStore, clear_pending_controller_private_state,
+    save_pending_controller_private_state, save_private_state,
 };
 
 /// `rotateControllerKey(didContract, providers, newSecretKey)`.
@@ -72,7 +70,9 @@ where
 
     // Try to promote the new state to active.
     if let Err(promote_err) = save_private_state(store, next_state, PrivateStateSlot::Active).await {
-        return Err(ApiError::Controller(crate::error::ControllerError::RotationOrphaned(promote_err.to_string())));
+        return Err(ApiError::Controller(crate::error::ControllerError::RotationOrphaned(
+            promote_err.to_string(),
+        )));
     }
     // Best-effort cleanup of the pending slot.
     let _ = clear_pending_controller_private_state(store).await;
@@ -82,10 +82,11 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::private_state::{InMemoryPrivateStateStore, restore_private_state};
     use midnight_did_method::midnight_did::{MidnightNetwork, parse_contract_address};
     use midnight_did_runtime::{DidContractCall, RecordingBackend};
+
+    use super::*;
+    use crate::private_state::{InMemoryPrivateStateStore, restore_private_state};
 
     const ADDR: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 

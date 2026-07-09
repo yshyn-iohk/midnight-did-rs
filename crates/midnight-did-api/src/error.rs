@@ -30,10 +30,11 @@
 //! that only care about one domain can pattern-match the narrow
 //! type directly without handling unrelated variants.
 
-use thiserror::Error;
-
-use midnight_did_domain::{crypto_codecs::CodecError, did_document::ValidationError, ledger_utils::LedgerUtilsError};
+use midnight_did_domain::crypto_codecs::CodecError;
+use midnight_did_domain::did_document::ValidationError;
+use midnight_did_domain::ledger_utils::LedgerUtilsError;
 use midnight_did_method::midnight_did::MidnightDidError;
+use thiserror::Error;
 
 /// Error category returned by a [`crate::contract::DidContract`] implementation.
 ///

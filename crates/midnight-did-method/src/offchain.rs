@@ -37,7 +37,13 @@
 //! type-descriptor machinery). The MOD1 frame, the JWK ↔ key-kind mapping,
 //! and the state-hash derivation are fully implemented here.
 
-use blake2::{Blake2s, Digest, digest::consts::U32};
+use blake2::digest::consts::U32;
+use blake2::{Blake2s, Digest};
+use midnight_did_domain::crypto_codecs::{CodecError, decode_base64url, encode_base64url};
+use midnight_did_domain::did_document::{
+    CurveType, DidString, DocumentContext, KeyType, NewPublicKeyJwk, NewService, NewVerificationMethod, PublicKeyJwk,
+    Service, ServiceEndpoint, ServiceType, ValidationError, VerificationMethod, VerificationMethodType,
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -45,11 +51,6 @@ use crate::hex_ext::HashOutputExt;
 use crate::midnight_did::{
     MidnightDidError, MidnightDidString, MidnightNetwork, OffchainStateHashHex, create_midnight_did_string,
     parse_midnight_did_string,
-};
-use midnight_did_domain::crypto_codecs::{CodecError, decode_base64url, encode_base64url};
-use midnight_did_domain::did_document::{
-    CurveType, DidString, DocumentContext, KeyType, NewPublicKeyJwk, NewService, NewVerificationMethod, PublicKeyJwk,
-    Service, ServiceEndpoint, ServiceType, ValidationError, VerificationMethod, VerificationMethodType,
 };
 
 // ---------------------------------------------------------------------------

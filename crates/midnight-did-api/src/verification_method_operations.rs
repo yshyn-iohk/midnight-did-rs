@@ -20,23 +20,19 @@
 //! both files; we merge them here because the operations and the relation
 //! helpers are tightly coupled (relation purge runs as part of remove).
 
-use midnight_did_domain::{
-    did_document::{VerificationMethod, VerificationMethodRelation},
-    ledger_utils::BoundIdField,
-};
+use midnight_did_domain::did_document::{VerificationMethod, VerificationMethodRelation};
+use midnight_did_domain::ledger_utils::BoundIdField;
 use midnight_did_runtime::{Backend, Contract};
 
-use crate::{
-    contract::{
-        DidLedgerSnapshot, FinalizedTxData, MapMutation, SchnorrJubjubDigest, SchnorrJubjubSignature, SetMutation,
-    },
-    error::{ApiError, ContractError},
-    ledger_mappers::{
-        SchnorrJubjubVerificationMethod, ledger_verification_method_relation_for,
-        schnorr_jubjub_verification_method_to_ledger, verification_method_to_ledger,
-    },
-    subject::normalize_bound_fragment_id_for,
+use crate::contract::{
+    DidLedgerSnapshot, FinalizedTxData, MapMutation, SchnorrJubjubDigest, SchnorrJubjubSignature, SetMutation,
 };
+use crate::error::{ApiError, ContractError};
+use crate::ledger_mappers::{
+    SchnorrJubjubVerificationMethod, ledger_verification_method_relation_for,
+    schnorr_jubjub_verification_method_to_ledger, verification_method_to_ledger,
+};
+use crate::subject::normalize_bound_fragment_id_for;
 
 /// Canonical ordering of verification-method relations used by purge logic
 /// (`VerificationMethodRelations` in the TS source).
@@ -83,10 +79,12 @@ pub fn assert_verification_method_relation_absent(
 ) -> Result<(), ApiError> {
     let ledger_relation = ledger_verification_method_relation_for(relation);
     if state.relation_contains(ledger_relation, normalized_method_id) {
-        Err(ApiError::Verification(crate::error::VerificationError::RelationAlreadyContains {
-            relation: format!("{relation:?}"),
-            method_id: normalized_method_id.to_owned(),
-        }))
+        Err(ApiError::Verification(
+            crate::error::VerificationError::RelationAlreadyContains {
+                relation: format!("{relation:?}"),
+                method_id: normalized_method_id.to_owned(),
+            },
+        ))
     } else {
         Ok(())
     }
@@ -103,10 +101,12 @@ pub fn assert_verification_method_relation_present(
     if state.relation_contains(ledger_relation, normalized_method_id) {
         Ok(())
     } else {
-        Err(ApiError::Verification(crate::error::VerificationError::RelationMissing {
-            relation: format!("{relation:?}"),
-            method_id: normalized_method_id.to_owned(),
-        }))
+        Err(ApiError::Verification(
+            crate::error::VerificationError::RelationMissing {
+                relation: format!("{relation:?}"),
+                method_id: normalized_method_id.to_owned(),
+            },
+        ))
     }
 }
 
@@ -272,17 +272,17 @@ pub async fn remove_verification_method_relation<B: Backend>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::contract::{DidLedgerSnapshot, LedgerVerificationMethodRelation};
-    use midnight_did_domain::{
-        crypto_codecs::encode_base64url,
-        did_document::{
-            CurveType, KeyType, NewPublicKeyJwk, NewVerificationMethod, PublicKeyJwk, VerificationMethodType,
-        },
+    use std::collections::BTreeMap;
+
+    use midnight_did_domain::crypto_codecs::encode_base64url;
+    use midnight_did_domain::did_document::{
+        CurveType, KeyType, NewPublicKeyJwk, NewVerificationMethod, PublicKeyJwk, VerificationMethodType,
     };
     use midnight_did_method::midnight_did::{MidnightNetwork, parse_contract_address};
     use midnight_did_runtime::{DidContractCall, RecordingBackend};
-    use std::collections::BTreeMap;
+
+    use super::*;
+    use crate::contract::{DidLedgerSnapshot, LedgerVerificationMethodRelation};
 
     const ADDR: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 
@@ -345,7 +345,10 @@ mod tests {
         let calls = contract.backend.recorded_calls();
         assert!(matches!(
             &calls[..],
-            [DidContractCall::SetVerificationMethod { mutation: MapMutation::Update, .. }]
+            [DidContractCall::SetVerificationMethod {
+                mutation: MapMutation::Update,
+                ..
+            }]
         ));
     }
 
@@ -388,7 +391,10 @@ mod tests {
         let err = add_verification_method_relation(&contract, VerificationMethodRelation::Authentication, "key-1")
             .await
             .unwrap_err();
-        assert!(matches!(err, ApiError::Verification(crate::error::VerificationError::RelationAlreadyContains { .. })));
+        assert!(matches!(
+            err,
+            ApiError::Verification(crate::error::VerificationError::RelationAlreadyContains { .. })
+        ));
     }
 
     #[tokio::test]
@@ -397,6 +403,9 @@ mod tests {
         let err = remove_verification_method_relation(&contract, VerificationMethodRelation::KeyAgreement, "key-1")
             .await
             .unwrap_err();
-        assert!(matches!(err, ApiError::Verification(crate::error::VerificationError::RelationMissing { .. })));
+        assert!(matches!(
+            err,
+            ApiError::Verification(crate::error::VerificationError::RelationMissing { .. })
+        ));
     }
 }

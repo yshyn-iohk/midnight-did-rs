@@ -24,27 +24,21 @@
 
 use std::collections::BTreeMap;
 
-use midnight_did_domain::{
-    crypto_codecs::encode_base64url,
-    did_document::{
-        Controller, CurveType, DidDocument, DidDocumentMetadata, DidKeyId, DidString, DocumentContext, KeyType,
-        NewPublicKeyJwk, NewService, NewVerificationMethod, PublicKeyJwk, Service, ServiceEndpoint,
-        ServiceEndpointArrayEntry, ServiceType, VerificationMethod, VerificationMethodRelation,
-        VerificationMethodType,
-    },
+use midnight_did_domain::crypto_codecs::encode_base64url;
+use midnight_did_domain::did_document::{
+    Controller, CurveType, DidDocument, DidDocumentMetadata, DidKeyId, DidString, DocumentContext, KeyType,
+    NewPublicKeyJwk, NewService, NewVerificationMethod, PublicKeyJwk, Service, ServiceEndpoint,
+    ServiceEndpointArrayEntry, ServiceType, VerificationMethod, VerificationMethodRelation, VerificationMethodType,
 };
-use midnight_did_method::midnight_did::{MidnightNetwork, create_midnight_did_string};
-
 use midnight_did_method::hex_ext::HashOutputExt;
+use midnight_did_method::midnight_did::{MidnightNetwork, create_midnight_did_string};
 use midnight_did_runtime::{Backend, Contract};
 
-use crate::{
-    contract::{
-        DidLedgerSnapshot, LedgerPublicKeyJwk, LedgerSchnorrJubjubVerificationMethod, LedgerService,
-        LedgerVerificationMethodRelation,
-    },
-    error::{ApiError, ContractError},
+use crate::contract::{
+    DidLedgerSnapshot, LedgerPublicKeyJwk, LedgerSchnorrJubjubVerificationMethod, LedgerService,
+    LedgerVerificationMethodRelation,
 };
+use crate::error::{ApiError, ContractError};
 
 /// Outcome of [`resolve`]: a `(document, metadata)` pair.
 #[derive(Debug, Clone, PartialEq, Eq)]

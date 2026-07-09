@@ -33,14 +33,12 @@
 use std::sync::Mutex;
 
 use async_trait::async_trait;
-use midnight_did_api::{
-    error::ApiError,
-    private_state::{
-        DidPrivateState, InMemoryPrivateStateStore, PrivateStateError, PrivateStateSlot, PrivateStateStore,
-        RecoverPendingControllerPrivateStateOptions, bind_private_state_provider, init_private_state,
-        is_restorable_did_private_state, recover_pending_controller_private_state, require_private_state,
-        restore_private_state, save_pending_controller_private_state, save_private_state,
-    },
+use midnight_did_api::error::ApiError;
+use midnight_did_api::private_state::{
+    DidPrivateState, InMemoryPrivateStateStore, PrivateStateError, PrivateStateSlot, PrivateStateStore,
+    RecoverPendingControllerPrivateStateOptions, bind_private_state_provider, init_private_state,
+    is_restorable_did_private_state, recover_pending_controller_private_state, require_private_state,
+    restore_private_state, save_pending_controller_private_state, save_private_state,
 };
 
 // ---------------------------------------------------------------------------

@@ -24,10 +24,8 @@ use compact_runtime::ContractAddress;
 use midnight_base_crypto::hash::HashOutput;
 use midnight_did_method::hex_ext::{HashOutputExt, ParseHexError};
 
-const ZERO_HEX: &str =
-    "0000000000000000000000000000000000000000000000000000000000000000";
-const ARBITRARY_HEX: &str =
-    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+const ZERO_HEX: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+const ARBITRARY_HEX: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 #[test]
 fn hash_output_round_trips_through_hex() {
@@ -53,8 +51,7 @@ fn hash_output_to_hex_is_full_64_chars() {
 
 #[test]
 fn hash_output_from_hex_rejects_short_string() {
-    let err =
-        HashOutput::from_hex("abcd").expect_err("short hex should be rejected");
+    let err = HashOutput::from_hex("abcd").expect_err("short hex should be rejected");
     match err {
         ParseHexError::WrongLength(n) => assert_eq!(n, 4),
         other => panic!("expected WrongLength(4), got {other:?}"),
@@ -73,8 +70,7 @@ fn hash_output_from_hex_rejects_long_string() {
 
 #[test]
 fn hash_output_from_hex_rejects_non_hex_chars() {
-    let bad =
-        "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz";
+    let bad = "zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz";
     assert_eq!(bad.len(), 64);
     let err = HashOutput::from_hex(bad).expect_err("non-hex rejected");
     assert!(
@@ -102,8 +98,7 @@ fn contract_address_inner_hash_output_matches() {
 
 #[test]
 fn contract_address_from_hex_rejects_wrong_length() {
-    let err = ContractAddress::from_hex("deadbeef")
-        .expect_err("short hex rejected");
+    let err = ContractAddress::from_hex("deadbeef").expect_err("short hex rejected");
     assert!(matches!(err, ParseHexError::WrongLength(8)));
 }
 

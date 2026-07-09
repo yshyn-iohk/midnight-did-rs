@@ -41,29 +41,25 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use midnight_did_api::{
-    contract::{
-        DidLedgerSnapshot, JubjubPointHex, LedgerPublicKeyJwk, LedgerSchnorrJubjubVerificationMethod, LedgerService,
-        LedgerVerificationMethod, NewJubjubPointHex,
-    },
-    controller_operations::rotate_controller_key,
-    did_operations::create_did,
-    document_operations::{add_also_known_as, deactivate, remove_also_known_as},
-    ledger_mappers::{NewSchnorrJubjubVerificationMethod, SchnorrJubjubVerificationMethod},
-    private_state::{InMemoryPrivateStateStore, PrivateStateSlot, restore_private_state},
-    resolution::{ledger_state_to_did_document, ledger_state_to_metadata, resolve},
-    service_operations::{add_service, remove_service},
-    verification_method_operations::{
-        add_schnorr_jubjub_verification_method, add_verification_method, add_verification_method_relation,
-        remove_schnorr_jubjub_verification_method, remove_verification_method, update_verification_method,
-    },
+use midnight_did_api::contract::{
+    DidLedgerSnapshot, JubjubPointHex, LedgerPublicKeyJwk, LedgerSchnorrJubjubVerificationMethod, LedgerService,
+    LedgerVerificationMethod, NewJubjubPointHex,
 };
-use midnight_did_domain::{
-    crypto_codecs::encode_base64url,
-    did_document::{
-        CurveType, KeyType, NewPublicKeyJwk, NewService, NewVerificationMethod, PublicKeyJwk, Service, ServiceEndpoint,
-        ServiceType, VerificationMethod, VerificationMethodRelation, VerificationMethodType,
-    },
+use midnight_did_api::controller_operations::rotate_controller_key;
+use midnight_did_api::did_operations::create_did;
+use midnight_did_api::document_operations::{add_also_known_as, deactivate, remove_also_known_as};
+use midnight_did_api::ledger_mappers::{NewSchnorrJubjubVerificationMethod, SchnorrJubjubVerificationMethod};
+use midnight_did_api::private_state::{InMemoryPrivateStateStore, PrivateStateSlot, restore_private_state};
+use midnight_did_api::resolution::{ledger_state_to_did_document, ledger_state_to_metadata, resolve};
+use midnight_did_api::service_operations::{add_service, remove_service};
+use midnight_did_api::verification_method_operations::{
+    add_schnorr_jubjub_verification_method, add_verification_method, add_verification_method_relation,
+    remove_schnorr_jubjub_verification_method, remove_verification_method, update_verification_method,
+};
+use midnight_did_domain::crypto_codecs::encode_base64url;
+use midnight_did_domain::did_document::{
+    CurveType, KeyType, NewPublicKeyJwk, NewService, NewVerificationMethod, PublicKeyJwk, Service, ServiceEndpoint,
+    ServiceType, VerificationMethod, VerificationMethodRelation, VerificationMethodType,
 };
 use midnight_did_method::midnight_did::{MidnightNetwork, parse_contract_address};
 use midnight_did_runtime::{Contract, DidContractCall, RecordingBackend};
@@ -332,7 +328,10 @@ async fn resolved_document_carries_w3c_contexts() {
 async fn resolved_document_id_uses_canonical_midnight_did_format() {
     let contract = contract_with(MidnightNetwork::Testnet, initial_ledger());
     let resolved = resolve(&contract).await.unwrap().expect("resolves");
-    assert_eq!(resolved.did_document.id.as_str(), format!("did:midnight:testnet:{ADDR}"));
+    assert_eq!(
+        resolved.did_document.id.as_str(),
+        format!("did:midnight:testnet:{ADDR}")
+    );
 }
 
 /// "should surface DID Document metadata with version and activation state"
@@ -374,10 +373,14 @@ async fn add_verification_method_records_insert_and_resolves() {
     add_verification_method(&contract, &vm).await.unwrap();
 
     let recorded = contract
-        .backend.recorded_calls()
+        .backend
+        .recorded_calls()
         .into_iter()
         .find_map(|c| match c {
-            DidContractCall::SetVerificationMethod { method: ledger, mutation: _ } => Some(ledger),
+            DidContractCall::SetVerificationMethod {
+                method: ledger,
+                mutation: _,
+            } => Some(ledger),
             _ => None,
         })
         .expect("set-vm call recorded");
@@ -445,7 +448,11 @@ async fn deactivate_records_call_and_metadata_reflects_state() {
     let contract = contract_with(MidnightNetwork::Undeployed, initial_ledger());
     deactivate(&contract).await.unwrap();
     assert!(
-        contract.backend.recorded_calls().iter().any(|c| matches!(c, DidContractCall::Deactivate)),
+        contract
+            .backend
+            .recorded_calls()
+            .iter()
+            .any(|c| matches!(c, DidContractCall::Deactivate)),
         "{:?}",
         contract.backend.recorded_calls()
     );

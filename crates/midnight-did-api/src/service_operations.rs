@@ -17,21 +17,17 @@
 //!
 //! Rust port of `packages/api/src/service-operations.ts`.
 
-use midnight_did_domain::{did_document::Service, ledger_utils::BoundIdField};
+use midnight_did_domain::did_document::Service;
+use midnight_did_domain::ledger_utils::BoundIdField;
 use midnight_did_runtime::{Backend, Contract};
 
-use crate::{
-    contract::{FinalizedTxData, MapMutation},
-    error::{ApiError, ContractError},
-    ledger_mappers::service_to_ledger,
-    subject::normalize_bound_fragment_id_for,
-};
+use crate::contract::{FinalizedTxData, MapMutation};
+use crate::error::{ApiError, ContractError};
+use crate::ledger_mappers::service_to_ledger;
+use crate::subject::normalize_bound_fragment_id_for;
 
 /// `addService`.
-pub async fn add_service<B: Backend>(
-    contract: &Contract<B>,
-    service: &Service,
-) -> Result<FinalizedTxData, ApiError> {
+pub async fn add_service<B: Backend>(contract: &Contract<B>, service: &Service) -> Result<FinalizedTxData, ApiError> {
     let ledger = service_to_ledger(contract, service)?;
     contract
         .set_service(ledger, MapMutation::Insert)
@@ -52,10 +48,7 @@ pub async fn update_service<B: Backend>(
 }
 
 /// `removeService`.
-pub async fn remove_service<B: Backend>(
-    contract: &Contract<B>,
-    service_id: &str,
-) -> Result<FinalizedTxData, ApiError> {
+pub async fn remove_service<B: Backend>(contract: &Contract<B>, service_id: &str) -> Result<FinalizedTxData, ApiError> {
     let normalized = normalize_bound_fragment_id_for(contract, service_id, BoundIdField::ShortServiceId)?;
     contract
         .remove_service(normalized)
@@ -65,10 +58,11 @@ pub async fn remove_service<B: Backend>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use midnight_did_domain::did_document::{NewService, ServiceEndpoint, ServiceType};
     use midnight_did_method::midnight_did::{MidnightNetwork, parse_contract_address};
     use midnight_did_runtime::{DidContractCall, RecordingBackend};
+
+    use super::*;
 
     const ADDR: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 

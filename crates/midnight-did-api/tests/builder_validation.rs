@@ -23,11 +23,11 @@
 //! See `docs/superpowers/notes/2026-06-26-builder-validation-audit.md` for
 //! the full audit verdict.
 
-use midnight_did_api::{
-    contract::{JubjubPointHex, NewJubjubPointHex, SchnorrJubjubDigest, SchnorrJubjubSignature, ValidationError},
-    error::ApiError,
-    ledger_mappers::{NewSchnorrJubjubVerificationMethod, SchnorrJubjubVerificationMethod},
+use midnight_did_api::contract::{
+    JubjubPointHex, NewJubjubPointHex, SchnorrJubjubDigest, SchnorrJubjubSignature, ValidationError,
 };
+use midnight_did_api::error::ApiError;
+use midnight_did_api::ledger_mappers::{NewSchnorrJubjubVerificationMethod, SchnorrJubjubVerificationMethod};
 
 // ---------------------------------------------------------------------------
 // JubjubPointHex
@@ -51,7 +51,12 @@ fn jubjub_point_hex_rejects_empty_x() {
         y: "00".repeat(32),
     })
     .unwrap_err();
-    assert!(matches!(err, ValidationError::Empty { field: "JubjubPointHex.x" }));
+    assert!(matches!(
+        err,
+        ValidationError::Empty {
+            field: "JubjubPointHex.x"
+        }
+    ));
 }
 
 #[test]
@@ -61,7 +66,12 @@ fn jubjub_point_hex_rejects_empty_y() {
         y: String::new(),
     })
     .unwrap_err();
-    assert!(matches!(err, ValidationError::Empty { field: "JubjubPointHex.y" }));
+    assert!(matches!(
+        err,
+        ValidationError::Empty {
+            field: "JubjubPointHex.y"
+        }
+    ));
 }
 
 #[test]
@@ -71,7 +81,13 @@ fn jubjub_point_hex_rejects_odd_length_x() {
         y: "00".repeat(32),
     })
     .unwrap_err();
-    assert!(matches!(err, ValidationError::NotHex { field: "JubjubPointHex.x", .. }));
+    assert!(matches!(
+        err,
+        ValidationError::NotHex {
+            field: "JubjubPointHex.x",
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -81,7 +97,13 @@ fn jubjub_point_hex_rejects_non_hex_character() {
         y: "00".repeat(32),
     })
     .unwrap_err();
-    assert!(matches!(err, ValidationError::NotHex { field: "JubjubPointHex.x", .. }));
+    assert!(matches!(
+        err,
+        ValidationError::NotHex {
+            field: "JubjubPointHex.x",
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -136,7 +158,9 @@ fn schnorr_jubjub_signature_rejects_empty() {
     let err = SchnorrJubjubSignature::new(String::new()).unwrap_err();
     assert!(matches!(
         err,
-        ValidationError::Empty { field: "SchnorrJubjubSignature.bytes_hex" }
+        ValidationError::Empty {
+            field: "SchnorrJubjubSignature.bytes_hex"
+        }
     ));
 }
 
@@ -145,7 +169,10 @@ fn schnorr_jubjub_signature_rejects_odd_length() {
     let err = SchnorrJubjubSignature::new("abc".into()).unwrap_err();
     assert!(matches!(
         err,
-        ValidationError::NotHex { field: "SchnorrJubjubSignature.bytes_hex", .. }
+        ValidationError::NotHex {
+            field: "SchnorrJubjubSignature.bytes_hex",
+            ..
+        }
     ));
 }
 
@@ -154,7 +181,10 @@ fn schnorr_jubjub_signature_rejects_non_hex() {
     let err = SchnorrJubjubSignature::new("zz".repeat(96)).unwrap_err();
     assert!(matches!(
         err,
-        ValidationError::NotHex { field: "SchnorrJubjubSignature.bytes_hex", .. }
+        ValidationError::NotHex {
+            field: "SchnorrJubjubSignature.bytes_hex",
+            ..
+        }
     ));
 }
 
@@ -179,13 +209,8 @@ fn schnorr_jubjub_signature_rejects_short_payload() {
 
 #[test]
 fn schnorr_jubjub_digest_accepts_four_32_byte_limbs() {
-    let digest = SchnorrJubjubDigest::new([
-        "01".repeat(32),
-        "02".repeat(32),
-        "03".repeat(32),
-        "04".repeat(32),
-    ])
-    .expect("four 32-byte limbs are valid");
+    let digest = SchnorrJubjubDigest::new(["01".repeat(32), "02".repeat(32), "03".repeat(32), "04".repeat(32)])
+        .expect("four 32-byte limbs are valid");
     let limbs = digest.limbs();
     assert_eq!(limbs[0], "01".repeat(32));
     assert_eq!(limbs[3], "04".repeat(32));
@@ -194,26 +219,25 @@ fn schnorr_jubjub_digest_accepts_four_32_byte_limbs() {
 #[test]
 fn schnorr_jubjub_digest_rejects_short_limb() {
     // Legacy fixture used `["1", "2", "3", "4"]` (each 1 hex char).
-    let err = SchnorrJubjubDigest::new([
-        "1".into(),
-        "02".repeat(32),
-        "03".repeat(32),
-        "04".repeat(32),
-    ])
-    .unwrap_err();
-    assert!(matches!(err, ValidationError::NotHex { field: "SchnorrJubjubDigest[0]", .. }));
+    let err = SchnorrJubjubDigest::new(["1".into(), "02".repeat(32), "03".repeat(32), "04".repeat(32)]).unwrap_err();
+    assert!(matches!(
+        err,
+        ValidationError::NotHex {
+            field: "SchnorrJubjubDigest[0]",
+            ..
+        }
+    ));
 }
 
 #[test]
 fn schnorr_jubjub_digest_rejects_empty_limb() {
-    let err = SchnorrJubjubDigest::new([
-        "01".repeat(32),
-        String::new(),
-        "03".repeat(32),
-        "04".repeat(32),
-    ])
-    .unwrap_err();
-    assert!(matches!(err, ValidationError::Empty { field: "SchnorrJubjubDigest[1]" }));
+    let err = SchnorrJubjubDigest::new(["01".repeat(32), String::new(), "03".repeat(32), "04".repeat(32)]).unwrap_err();
+    assert!(matches!(
+        err,
+        ValidationError::Empty {
+            field: "SchnorrJubjubDigest[1]"
+        }
+    ));
 }
 
 #[test]
@@ -225,18 +249,19 @@ fn schnorr_jubjub_digest_rejects_non_hex_limb() {
         "04".repeat(32),
     ])
     .unwrap_err();
-    assert!(matches!(err, ValidationError::NotHex { field: "SchnorrJubjubDigest[2]", .. }));
+    assert!(matches!(
+        err,
+        ValidationError::NotHex {
+            field: "SchnorrJubjubDigest[2]",
+            ..
+        }
+    ));
 }
 
 #[test]
 fn schnorr_jubjub_digest_rejects_wrong_length_limb() {
-    let err = SchnorrJubjubDigest::new([
-        "01".repeat(32),
-        "02".repeat(32),
-        "03".repeat(32),
-        "04".repeat(33),
-    ])
-    .unwrap_err();
+    let err =
+        SchnorrJubjubDigest::new(["01".repeat(32), "02".repeat(32), "03".repeat(32), "04".repeat(33)]).unwrap_err();
     assert!(matches!(
         err,
         ValidationError::WrongByteLength {

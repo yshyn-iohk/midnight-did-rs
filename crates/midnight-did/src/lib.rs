@@ -47,26 +47,21 @@
 #![forbid(unsafe_code)]
 #![warn(missing_docs, rust_2018_idioms, clippy::all)]
 
-/// Pure-data DID Core types, validators, MOD1 offchain encoder.
-pub use midnight_did_domain as domain;
-
-/// Midnight method profile: `did:midnight:*` parsing, ledger mappers,
-/// network mapping.
-pub use midnight_did_method as method;
-
 /// Async API: operation builders + resolution. Drives `Contract<B>` from
 /// the runtime crate.
 pub use midnight_did_api as api;
-
+// Convenience flat re-exports of the most-used types.
+pub use midnight_did_api::ApiError;
+/// Pure-data DID Core types, validators, MOD1 offchain encoder.
+pub use midnight_did_domain as domain;
+pub use midnight_did_domain::DidDocument;
+/// Midnight method profile: `did:midnight:*` parsing, ledger mappers,
+/// network mapping.
+pub use midnight_did_method as method;
+pub use midnight_did_method::midnight_did::{MidnightDidString, MidnightNetwork, MidnightSubjectId};
 /// Codegen target + concrete contract impls. Behind the `runtime` feature.
 #[cfg(feature = "runtime")]
 pub use midnight_did_runtime as runtime;
-
-// Convenience flat re-exports of the most-used types.
-pub use midnight_did_api::ApiError;
-pub use midnight_did_domain::DidDocument;
-pub use midnight_did_method::midnight_did::{MidnightDidString, MidnightNetwork, MidnightSubjectId};
-
 // `Contract<B>` is the v0.4.0 operation-driver shape. Re-export from the
 // runtime crate so downstream consumers can pull it in via the umbrella
 // without an explicit runtime dep. Behind the same `runtime` feature so

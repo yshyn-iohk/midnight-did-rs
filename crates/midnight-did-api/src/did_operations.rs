@@ -18,18 +18,17 @@
 use midnight_did_method::hex_ext::HashOutputExt;
 use midnight_did_runtime::{Backend, Contract};
 
-use crate::{
-    contract::FinalizedTxData,
-    controller_operations::rotate_controller_key,
-    document_operations::deactivate,
-    error::ApiError,
-    private_state::{DidPrivateState, PrivateStateSlot, PrivateStateStore, init_private_state, save_private_state},
-    resolution::{ResolvedMidnightDid, resolve},
-};
-
+use crate::contract::FinalizedTxData;
+use crate::controller_operations::rotate_controller_key;
 pub use crate::controller_operations::rotate_controller_key as rotate_did_controller_key;
+use crate::document_operations::deactivate;
 pub use crate::document_operations::{add_also_known_as, deactivate as deactivate_did, remove_also_known_as};
+use crate::error::ApiError;
+use crate::private_state::{
+    DidPrivateState, PrivateStateSlot, PrivateStateStore, init_private_state, save_private_state,
+};
 pub use crate::resolution::resolve as resolve_did;
+use crate::resolution::{ResolvedMidnightDid, resolve};
 pub use crate::service_operations::{add_service, remove_service, update_service};
 pub use crate::verification_method_operations::{
     add_schnorr_jubjub_verification_method, add_verification_method, add_verification_method_relation,
@@ -97,9 +96,7 @@ pub async fn apply_patch<B: Backend>(
 
 /// Re-export-friendly alias to `resolve` to highlight the operation-level
 /// intent at the call site.
-pub async fn read_did_document<B: Backend>(
-    contract: &Contract<B>,
-) -> Result<Option<ResolvedMidnightDid>, ApiError> {
+pub async fn read_did_document<B: Backend>(contract: &Contract<B>) -> Result<Option<ResolvedMidnightDid>, ApiError> {
     resolve(contract).await
 }
 
@@ -139,11 +136,12 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::private_state::{InMemoryPrivateStateStore, PrivateStateSlot, restore_private_state};
     use midnight_did_domain::did_document::{NewService, Service, ServiceEndpoint, ServiceType};
     use midnight_did_method::midnight_did::{MidnightNetwork, parse_contract_address};
     use midnight_did_runtime::{DidContractCall, RecordingBackend};
+
+    use super::*;
+    use crate::private_state::{InMemoryPrivateStateStore, PrivateStateSlot, restore_private_state};
 
     const ADDR: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 

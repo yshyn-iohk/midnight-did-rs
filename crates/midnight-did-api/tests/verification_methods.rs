@@ -29,26 +29,22 @@
 
 use std::collections::BTreeMap;
 
-use midnight_did_api::{
-    contract::{
-        DidLedgerSnapshot, JubjubPointHex, LedgerVerificationMethodRelation, MapMutation, NewJubjubPointHex,
-        SchnorrJubjubDigest, SchnorrJubjubSignature, SetMutation,
-    },
-    error::ApiError,
-    ledger_mappers::{NewSchnorrJubjubVerificationMethod, SchnorrJubjubVerificationMethod},
-    verification_method_operations::{
-        VERIFICATION_METHOD_RELATIONS, add_schnorr_jubjub_verification_method, add_verification_method,
-        add_verification_method_relation, remove_schnorr_jubjub_verification_method, remove_verification_method,
-        remove_verification_method_relation, update_verification_method, verification_method_relation_memberships,
-        verify_schnorr_jubjub_digest_signature,
-    },
+use midnight_did_api::contract::{
+    DidLedgerSnapshot, JubjubPointHex, LedgerVerificationMethodRelation, MapMutation, NewJubjubPointHex,
+    SchnorrJubjubDigest, SchnorrJubjubSignature, SetMutation,
 };
-use midnight_did_domain::{
-    crypto_codecs::encode_base64url,
-    did_document::{
-        CurveType, KeyType, NewPublicKeyJwk, NewVerificationMethod, PublicKeyJwk, VerificationMethod,
-        VerificationMethodRelation, VerificationMethodType,
-    },
+use midnight_did_api::error::ApiError;
+use midnight_did_api::ledger_mappers::{NewSchnorrJubjubVerificationMethod, SchnorrJubjubVerificationMethod};
+use midnight_did_api::verification_method_operations::{
+    VERIFICATION_METHOD_RELATIONS, add_schnorr_jubjub_verification_method, add_verification_method,
+    add_verification_method_relation, remove_schnorr_jubjub_verification_method, remove_verification_method,
+    remove_verification_method_relation, update_verification_method, verification_method_relation_memberships,
+    verify_schnorr_jubjub_digest_signature,
+};
+use midnight_did_domain::crypto_codecs::encode_base64url;
+use midnight_did_domain::did_document::{
+    CurveType, KeyType, NewPublicKeyJwk, NewVerificationMethod, PublicKeyJwk, VerificationMethod,
+    VerificationMethodRelation, VerificationMethodType,
 };
 use midnight_did_method::midnight_did::{MidnightNetwork, parse_contract_address};
 use midnight_did_runtime::{Contract, DidContractCall, RecordingBackend};
@@ -100,13 +96,8 @@ fn ed25519_vm(id: &str) -> VerificationMethod {
 async fn verifies_schnorr_jubjub_signature_with_normalized_method_id() {
     let c = contract();
     let absolute_method_id = format!("{}#key-1", did_subject());
-    let digest = SchnorrJubjubDigest::new([
-        "01".repeat(32),
-        "02".repeat(32),
-        "03".repeat(32),
-        "04".repeat(32),
-    ])
-    .expect("valid digest fixture");
+    let digest = SchnorrJubjubDigest::new(["01".repeat(32), "02".repeat(32), "03".repeat(32), "04".repeat(32)])
+        .expect("valid digest fixture");
     let signature = SchnorrJubjubSignature::new("ab".repeat(96)).expect("valid signature fixture");
 
     verify_schnorr_jubjub_digest_signature(&c, &absolute_method_id, digest.clone(), signature.clone())
@@ -117,7 +108,11 @@ async fn verifies_schnorr_jubjub_signature_with_normalized_method_id() {
     let recorded = calls
         .iter()
         .find_map(|call| match call {
-            DidContractCall::VerifySchnorrJubjubDigestSignature { method_id: id, digest: d, signature: s } => Some((id, d, s)),
+            DidContractCall::VerifySchnorrJubjubDigestSignature {
+                method_id: id,
+                digest: d,
+                signature: s,
+            } => Some((id, d, s)),
             _ => None,
         })
         .expect("recorded verify call");
@@ -139,7 +134,12 @@ async fn add_verification_method_records_insert_with_normalized_id() {
         .expect("add ok");
     let calls = c.backend.recorded_calls();
     match &calls[..] {
-        [DidContractCall::SetVerificationMethod { method: ledger, mutation: MapMutation::Insert }] => {
+        [
+            DidContractCall::SetVerificationMethod {
+                method: ledger,
+                mutation: MapMutation::Insert,
+            },
+        ] => {
             assert_eq!(ledger.id, "#key-add");
             assert_eq!(ledger.typ, VerificationMethodType::JsonWebKey);
             assert_eq!(ledger.public_key_jwk.kty, KeyType::OKP);
@@ -158,7 +158,12 @@ async fn update_verification_method_records_update() {
         .expect("update ok");
     let calls = c.backend.recorded_calls();
     match &calls[..] {
-        [DidContractCall::SetVerificationMethod { method: ledger, mutation: MapMutation::Update }] => {
+        [
+            DidContractCall::SetVerificationMethod {
+                method: ledger,
+                mutation: MapMutation::Update,
+            },
+        ] => {
             assert_eq!(ledger.id, "#key-update");
         }
         other => panic!("unexpected recorded calls: {other:?}"),
@@ -183,7 +188,11 @@ async fn remove_verification_method_purges_then_removes() {
     let relation_removes: Vec<_> = calls
         .iter()
         .filter_map(|c| match c {
-            DidContractCall::SetVerificationMethodRelation { relation: rel, method_id: id, mutation: SetMutation::Remove } => Some((*rel, id.clone())),
+            DidContractCall::SetVerificationMethodRelation {
+                relation: rel,
+                method_id: id,
+                mutation: SetMutation::Remove,
+            } => Some((*rel, id.clone())),
             _ => None,
         })
         .collect();
@@ -216,7 +225,16 @@ async fn remove_verification_method_skips_relations_it_does_not_belong_to() {
     let calls = c.backend.recorded_calls();
     let removes: Vec<_> = calls
         .iter()
-        .filter(|c| matches!(c, DidContractCall::SetVerificationMethodRelation { relation: _, method_id: _, mutation: _ }))
+        .filter(|c| {
+            matches!(
+                c,
+                DidContractCall::SetVerificationMethodRelation {
+                    relation: _,
+                    method_id: _,
+                    mutation: _
+                }
+            )
+        })
         .collect();
     assert_eq!(removes.len(), 1, "expected one relation purge, got: {removes:?}");
 }
@@ -315,7 +333,10 @@ async fn add_verification_method_relation_rejects_already_present() {
         .await
         .unwrap_err();
     match &err {
-        ApiError::Verification(midnight_did_api::error::VerificationError::RelationAlreadyContains { relation, method_id }) => {
+        ApiError::Verification(midnight_did_api::error::VerificationError::RelationAlreadyContains {
+            relation,
+            method_id,
+        }) => {
             assert_eq!(relation, "Authentication");
             assert_eq!(method_id, "#key-1");
         }

@@ -70,8 +70,6 @@ pub mod verification_method_operations;
 // ADR 0003 stay reachable via the api crate for downstream consumers that
 // still depend on `midnight_did_api::network_mapping`, etc. Migrate to
 // `midnight_did_method::*` when convenient.
-pub use midnight_did_method::network_mapping;
-
 // Re-exports — common API surface.
 pub use contract::{
     DidLedgerSnapshot, FinalizedTxData, JubjubPointHex, LedgerPublicKeyJwk, LedgerSchnorrJubjubVerificationMethod,
@@ -84,6 +82,7 @@ pub use ledger_mappers::{
     public_key_jwk_to_ledger, relation_set_from_state, schnorr_jubjub_verification_method_to_ledger, service_to_ledger,
     verification_method_to_ledger,
 };
+pub use midnight_did_method::network_mapping;
 pub use midnight_did_method::network_mapping::{
     DomainToRuntime, RuntimeNetworkId, RuntimeToDomain, domain_to_runtime, runtime_to_domain,
 };

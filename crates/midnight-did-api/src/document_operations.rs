@@ -20,10 +20,8 @@
 use midnight_did_domain::ledger_utils::assert_absolute_uri;
 use midnight_did_runtime::{Backend, Contract};
 
-use crate::{
-    contract::{FinalizedTxData, SetMutation},
-    error::{ApiError, ContractError},
-};
+use crate::contract::{FinalizedTxData, SetMutation};
+use crate::error::{ApiError, ContractError};
 
 /// `addAlsoKnownAs(didContract, aliasUri)` — adds an `alsoKnownAs` entry on
 /// the DID document.
@@ -61,9 +59,10 @@ pub async fn deactivate<B: Backend>(contract: &Contract<B>) -> Result<FinalizedT
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use midnight_did_method::midnight_did::{MidnightNetwork, parse_contract_address};
     use midnight_did_runtime::{DidContractCall, RecordingBackend};
+
+    use super::*;
 
     const ADDR: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 

@@ -25,24 +25,20 @@
 //! [`crate::contract::DidLedgerSnapshot::relation_set`] — the ledger
 //! abstraction owns the relation lookup.
 
+use midnight_did_domain::crypto_codecs::decode_base64url_bytes;
+use midnight_did_domain::did_document::{
+    CurveType, KeyType, PublicKeyJwk, PublicKeyJwkCoordinate, Service, VerificationMethod, VerificationMethodType,
+    public_key_jwk_coordinate_byte_length,
+};
+use midnight_did_domain::ledger_utils::{BoundIdField, service_endpoint_to_ledger, service_type_to_ledger};
 use midnight_did_runtime::{Backend, Contract};
 
-use crate::{
-    contract::{
-        JubjubPointHex, LedgerPublicKeyJwk, LedgerSchnorrJubjubVerificationMethod, LedgerService,
-        LedgerVerificationMethod, LedgerVerificationMethodRelation,
-    },
-    error::ApiError,
-    subject::normalize_bound_fragment_id_for,
+use crate::contract::{
+    JubjubPointHex, LedgerPublicKeyJwk, LedgerSchnorrJubjubVerificationMethod, LedgerService, LedgerVerificationMethod,
+    LedgerVerificationMethodRelation,
 };
-use midnight_did_domain::{
-    crypto_codecs::decode_base64url_bytes,
-    did_document::{
-        CurveType, KeyType, PublicKeyJwk, PublicKeyJwkCoordinate, Service, VerificationMethod, VerificationMethodType,
-        public_key_jwk_coordinate_byte_length,
-    },
-    ledger_utils::{BoundIdField, service_endpoint_to_ledger, service_type_to_ledger},
-};
+use crate::error::ApiError;
+use crate::subject::normalize_bound_fragment_id_for;
 
 /// Schnorr-Jubjub verification method as seen by the API layer. Mirrors
 /// `SchnorrJubjubVerificationMethod` from `packages/api/src/types.ts`.
@@ -196,7 +192,9 @@ pub fn verification_method_to_ledger<B: Backend>(
     assert_midnight_key_profile(method.public_key_jwk())?;
     let subject = crate::subject::get_did_subject(contract)?;
     if method.controller().as_str() != subject {
-        return Err(ApiError::Controller(crate::error::ControllerError::SubjectMismatch { expected: subject }));
+        return Err(ApiError::Controller(crate::error::ControllerError::SubjectMismatch {
+            expected: subject,
+        }));
     }
     let id = normalize_bound_fragment_id_for(contract, method.id().as_str(), BoundIdField::VerificationMethodId)?;
     Ok(LedgerVerificationMethod {
@@ -212,11 +210,7 @@ pub fn schnorr_jubjub_verification_method_to_ledger<B: Backend>(
     contract: &Contract<B>,
     method: &SchnorrJubjubVerificationMethod,
 ) -> Result<LedgerSchnorrJubjubVerificationMethod, ApiError> {
-    let id = normalize_bound_fragment_id_for(
-        contract,
-        method.id(),
-        BoundIdField::SchnorrJubjubVerificationMethodId,
-    )?;
+    let id = normalize_bound_fragment_id_for(contract, method.id(), BoundIdField::SchnorrJubjubVerificationMethodId)?;
     Ok(LedgerSchnorrJubjubVerificationMethod {
         id,
         public_key: method.public_key().clone(),
@@ -225,10 +219,7 @@ pub fn schnorr_jubjub_verification_method_to_ledger<B: Backend>(
 
 /// Map a domain [`Service`] into the ledger-wire shape, including JSON
 /// canonicalisation of the service endpoint.
-pub fn service_to_ledger<B: Backend>(
-    contract: &Contract<B>,
-    service: &Service,
-) -> Result<LedgerService, ApiError> {
+pub fn service_to_ledger<B: Backend>(contract: &Contract<B>, service: &Service) -> Result<LedgerService, ApiError> {
     let endpoint = service_endpoint_to_ledger(service.service_endpoint().clone());
     let typ = service_type_to_ledger(service.type_())?;
     let id = normalize_bound_fragment_id_for(contract, service.id(), BoundIdField::ServiceId)?;
@@ -274,13 +265,13 @@ pub fn relation_set_from_state(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use midnight_did_domain::did_document::{
-        NewPublicKeyJwk, NewVerificationMethod, ServiceEndpoint, ServiceType,
-    };
+    use std::collections::BTreeMap;
+
+    use midnight_did_domain::did_document::{NewPublicKeyJwk, NewVerificationMethod, ServiceEndpoint, ServiceType};
     use midnight_did_method::midnight_did::{MidnightNetwork, parse_contract_address};
     use midnight_did_runtime::RecordingBackend;
-    use std::collections::BTreeMap;
+
+    use super::*;
 
     const ADDR: &str = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
 
@@ -368,7 +359,10 @@ mod tests {
         })
         .expect("structurally valid VM with mismatched controller");
         let err = verification_method_to_ledger(&contract, &vm).unwrap_err();
-        assert!(matches!(err, ApiError::Controller(crate::error::ControllerError::SubjectMismatch { .. })));
+        assert!(matches!(
+            err,
+            ApiError::Controller(crate::error::ControllerError::SubjectMismatch { .. })
+        ));
     }
 
     #[test]
