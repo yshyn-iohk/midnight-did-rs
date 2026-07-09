@@ -1,0 +1,83 @@
+[workspace]
+resolver = "3"
+members  = ["crates/midnight-did", "crates/midnight-did-api", "crates/midnight-did-cli", "crates/midnight-did-domain", "crates/midnight-did-method", "crates/midnight-did-runtime", "crates/midnight-did-uniffi"]
+
+[workspace.package]
+version      = "0.4.1"
+edition      = "2024"
+rust-version = "1.85"
+license      = "Apache-2.0"
+authors      = ["Midnight Foundation"]
+repository   = "https://github.com/yshyn-iohk/midnight-did-rs"
+
+[workspace.dependencies]
+# midnight-ledger crates (path-mounted by devshell into third_party/midnight-ledger)
+midnight-base-crypto      = { path = "third_party/midnight-ledger/base-crypto" }
+midnight-coin-structure   = { path = "third_party/midnight-ledger/coin-structure" }
+midnight-onchain-runtime  = { path = "third_party/midnight-ledger/onchain-runtime" }
+midnight-onchain-state    = { path = "third_party/midnight-ledger/onchain-state" }
+midnight-onchain-vm       = { path = "third_party/midnight-ledger/onchain-vm" }
+midnight-serialize        = { path = "third_party/midnight-ledger/serialize" }
+midnight-storage          = { path = "third_party/midnight-ledger/storage" }
+midnight-transient-crypto = { path = "third_party/midnight-ledger/transient-crypto" }
+midnight-zkir             = { path = "third_party/midnight-ledger/zkir" }
+midnight-zswap            = { path = "third_party/midnight-ledger/zswap" }
+# compact's runtime helper crate (path-mounted by devshell into third_party/compact/runtime-rs).
+# The sibling `third_party/compact/runtime-rs-macros` is materialised by the same
+# devshell hook because compact-runtime's manifest references it via the relative
+# path `../runtime-rs-macros`. Mirroring compact's in-repo layout (runtime-rs +
+# runtime-rs-macros as siblings) keeps cargo's relative-path resolution working
+# without alias symlinks.
+compact-runtime           = { path = "third_party/compact/runtime-rs" }
+# common
+serde      = { version = "1", features = ["derive"] }
+serde_json = "1"
+hex        = "0.4"
+# domain crate (pure-data Midnight DID types)
+# `version = "=0.4.1"` is required for `cargo publish` to accept midnight-did-api's
+# manifest — crates.io rejects path-only dependencies. The `=` pin keeps the two
+# crates lock-stepped: bumping midnight-did-api to 0.1.1 must also bump
+# midnight-did-domain to 0.1.1. Same pattern as compact-runtime + compact-runtime-macros
+# in the codegen-rust toolchain.
+midnight-did-domain  = { path = "crates/midnight-did-domain",  version = "=0.4.1" }
+# method crate — Midnight method profile + LedgerToDomain mapper + network mapping.
+midnight-did-method  = { path = "crates/midnight-did-method",  version = "=0.4.1" }
+# api crate — consumed by the reference CLI + (future) downstream tooling
+midnight-did-api     = { path = "crates/midnight-did-api",     version = "=0.4.1" }
+# runtime crate — codegen target (currently blocked on upstream halo2 skew).
+midnight-did-runtime = { path = "crates/midnight-did-runtime", version = "=0.4.1" }
+# umbrella crate — re-exports the full 4-crate stack for monolithic consumers.
+midnight-did         = { path = "crates/midnight-did",         version = "=0.4.1" }
+
+# ---- Patch crates.io's `midnight-proofs` with the local fork ----
+#
+# `midnight-ledger/transient-crypto` calls three methods on `ParamsKZG`
+# that only exist on a patched fork of `midnight-proofs`:
+#   - read_mmap_arc        (mmap-backed SRS)
+#   - write_mmap_companion (write the companion mmap file)
+#   - read_custom_lazy     (seekable lazy parse, skips g_lagrange)
+#
+# Upstream `midnight-ledger`'s own Cargo.toml carries a [patch.crates-io]
+# entry pointing at a developer-local path. That patch is *not* inherited
+# when `midnight-ledger` is consumed as a path-dep from this workspace —
+# `cargo` only honours [patch.crates-io] declared at the workspace root.
+#
+# The midnight-zk fork is also exposed as a flake input (see `flake.nix`),
+# materialised via `third_party/midnight-zk` for local inspection. The git
+# dependency below is what cargo actually consumes — using a path-dep on
+# `third_party/midnight-zk/proofs` doesn't work because that crate's
+# `Cargo.toml` inherits from the *fork's* own [workspace.dependencies], and
+# `cargo` resolves `workspace = true` against *this* workspace's root, not
+# the path-dep's enclosing workspace.
+#
+# Pinning by rev keeps reproducibility independent of branch movement.
+# See `doc/adr/0006-runtime-crate-halo2-block.md` for the full story.
+[patch.crates-io]
+midnight-proofs = { git = "https://github.com/yshyn-iohk/midnight-zk.git", rev = "cf60e3ccb87f2de40b1307f7e78abdcb4c696c91" }
+
+[profile.dev]
+debug = "limited"
+
+[profile.release]
+lto       = "thin"
+codegen-units = 1

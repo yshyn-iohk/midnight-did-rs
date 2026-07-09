@@ -1,0 +1,37 @@
+[package]
+name = "midnight-did-method"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+authors.workspace      = true
+repository.workspace   = true
+homepage      = "https://github.com/yshyn-iohk/midnight-did-rs"
+documentation = "https://docs.rs/midnight-did-method"
+readme        = "README.md"
+description   = "Midnight method profile for the Rust DID port — did:midnight:* parsing, network mapping, and helpers that bind W3C DID Core types to the Midnight ledger surface."
+keywords = ["midnight", "did", "did-method", "ssi", "identity"]
+categories = ["cryptography", "data-structures"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+midnight-did-domain       = { workspace = true }
+# Upstream Midnight primitive types reused by the method profile:
+# `HashOutput` (32-byte hash) backs OffchainStateHash + DID identifier
+# bytes; `ContractAddress` is the on-chain identity slot. Adding them
+# at the method layer lets us drop the local String-typed shadow
+# newtypes and inherit the full derive stack (FieldRepr, FromFieldRepr,
+# BinaryHashRepr, serde, Zeroize, constant-time eq).
+midnight-base-crypto      = { workspace = true }
+compact-runtime           = { workspace = true }
+serde      = { workspace = true }
+serde_json = { workspace = true }
+thiserror  = "2"
+hex        = { workspace = true }
+blake2     = "0.10"

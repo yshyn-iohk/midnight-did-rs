@@ -1,0 +1,15 @@
+{
+  "didDocument": {
+    "@context": [
+      "https://www.w3.org/ns/did/v1",
+      "https://w3c.github.io/vc-jws-2020/contexts/v1"
+    ],
+    "controller": "did:midnight:undeployed:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "id": "did:midnight:undeployed:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  },
+  "didDocumentMetadata": {
+    "created": "2023-11-14T22:13:20Z",
+    "updated": "2023-11-14T23:15:00Z",
+    "versionId": "3"
+  }
+}

@@ -1,0 +1,1692 @@
+// This file is part of Compact.
+// Copyright (C) 2026 Midnight Foundation
+// SPDX-License-Identifier: Apache-2.0
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//  	http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+//! W3C DID Core 1.0 data model and cross-consistency validation.
+//!
+//! Port of `did-document.ts`. Where the TypeScript implementation uses Zod
+//! schemas, this crate exposes plain `serde`-friendly structs plus
+//! `validate(&self) -> Result<(), Vec<ValidationIssue>>` methods. The
+//! validation rules and message strings are kept close to the TS port so
+//! that error output stays comparable across runtimes.
+
+use std::collections::{BTreeMap, HashMap, HashSet};
+
+use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
+use thiserror::Error;
+
+use crate::crypto_codecs::{CodecError, decode_base64url_bytes};
+use crate::uri::normalize_uri_string;
+
+// ---------------------------------------------------------------------------
+// Validation primitives
+// ---------------------------------------------------------------------------
+
+/// A single validation problem with optional dot-joined path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ValidationIssue {
+    /// Human-readable description.
+    pub message: String,
+    /// Path of property accesses from the root of the validated value.
+    pub path: Vec<String>,
+}
+
+impl ValidationIssue {
+    /// Build a top-level issue with no path.
+    pub fn new(message: impl Into<String>) -> Self {
+        Self {
+            message: message.into(),
+            path: Vec::new(),
+        }
+    }
+
+    /// Build an issue rooted at `path`.
+    pub fn at(message: impl Into<String>, path: Vec<String>) -> Self {
+        Self {
+            message: message.into(),
+            path,
+        }
+    }
+}
+
+/// Aggregate validation error carrying every issue discovered during a single
+/// `validate()` pass.
+#[derive(Debug, Clone, PartialEq, Eq, Error)]
+#[error("validation failed: {summary}")]
+pub struct ValidationError {
+    /// Joined error summary (matches the TS error message shape).
+    pub summary: String,
+    /// Underlying issue list.
+    pub issues: Vec<ValidationIssue>,
+}
+
+impl ValidationError {
+    /// Build a [`ValidationError`] from a non-empty issue list.
+    #[must_use]
+    pub fn from_issues(issues: Vec<ValidationIssue>) -> Self {
+        let summary = issues
+            .iter()
+            .map(|issue| {
+                if issue.path.is_empty() {
+                    issue.message.clone()
+                } else {
+                    format!("{} at {}", issue.message, issue.path.join("."))
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("; ");
+        Self { summary, issues }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DID string newtypes
+// ---------------------------------------------------------------------------
+
+/// `did:method:specific-id` URL string (may include path/query/fragment).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct DidUrl(String);
+
+/// Relative URL reference (no scheme, no leading `//`).
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct RelativeUrl(String);
+
+/// Bare DID string with no path/query/fragment.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct DidString(String);
+
+/// DID Key ID — either a full DID URL `did:...#frag` or a relative `#frag` reference.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct DidKeyId(String);
+
+const URI_SCHEME_PREFIX_CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const URI_SCHEME_INNER_CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789+.-";
+
+fn has_uri_scheme(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.is_empty() {
+        return false;
+    }
+    if !URI_SCHEME_PREFIX_CHARS.contains(&bytes[0]) {
+        return false;
+    }
+    for (idx, byte) in bytes.iter().enumerate().skip(1) {
+        if *byte == b':' {
+            return idx > 0;
+        }
+        if !URI_SCHEME_INNER_CHARS.contains(byte) {
+            return false;
+        }
+    }
+    false
+}
+
+fn is_relative_reference(value: &str) -> bool {
+    if value.is_empty() {
+        return false;
+    }
+    if value.trim() != value {
+        return false;
+    }
+    if has_uri_scheme(value) {
+        return false;
+    }
+    if value.starts_with("//") {
+        return false;
+    }
+    // Best-effort URL parse against a synthetic base — matches the TS check.
+    url::Url::parse("https://example.org/")
+        .and_then(|base| base.join(value))
+        .is_ok()
+}
+
+fn is_key_fragment(value: &str) -> bool {
+    if value.is_empty() {
+        return false;
+    }
+    value
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | ':' | '%'))
+}
+
+fn extract_key_fragment(value: &str) -> &str {
+    if let Some(rest) = value.strip_prefix('#') {
+        return rest;
+    }
+    if value.starts_with("did:") {
+        return match value.find('#') {
+            Some(idx) => &value[idx + 1..],
+            None => "",
+        };
+    }
+    value
+}
+
+fn is_did_url(value: &str) -> bool {
+    value.starts_with("did:") && value.len() >= 5 && value.split(':').count() >= 3
+}
+
+fn is_did_string(value: &str) -> bool {
+    if !value.starts_with("did:") || value.len() < 5 {
+        return false;
+    }
+    if value.split(':').count() < 3 {
+        return false;
+    }
+    !value.chars().any(|c| matches!(c, '/' | '?' | '#'))
+}
+
+fn is_did_key_id(value: &str) -> bool {
+    let union = is_did_url(value) || is_relative_reference(value);
+    if !union {
+        return false;
+    }
+    is_key_fragment(extract_key_fragment(value))
+}
+
+impl DidUrl {
+    /// Validate a candidate DID URL.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] when the value is not a syntactically
+    /// valid DID URL (i.e. does not begin with `did:` followed by at least
+    /// a method and method-specific identifier).
+    pub fn parse(value: impl Into<String>) -> Result<Self, ValidationError> {
+        let s = value.into();
+        if !is_did_url(&s) {
+            return Err(ValidationError::from_issues(vec![ValidationIssue::new(
+                "Invalid DID URL format",
+            )]));
+        }
+        Ok(Self(s))
+    }
+
+    /// Borrow the URL as a string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Consume self and return the inner String.
+    pub fn into_string(self) -> String {
+        self.0
+    }
+}
+
+impl RelativeUrl {
+    /// Validate a candidate relative URL.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] when the value contains a URI scheme,
+    /// starts with `//`, or otherwise cannot be parsed as a reference
+    /// relative to the DID subject.
+    pub fn parse(value: impl Into<String>) -> Result<Self, ValidationError> {
+        let s = value.into();
+        if !is_relative_reference(&s) {
+            return Err(ValidationError::from_issues(vec![ValidationIssue::new(
+                "Relative URL must be relative to the DID subject",
+            )]));
+        }
+        Ok(Self(s))
+    }
+
+    /// Borrow the URL as a string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Consume self and return the inner String.
+    pub fn into_string(self) -> String {
+        self.0
+    }
+}
+
+impl DidString {
+    /// Validate a candidate bare DID string.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] when the value is not in
+    /// `did:<method>:<msi>` form, or when it contains path/query/fragment
+    /// characters (`/`, `?`, `#`).
+    pub fn parse(value: impl Into<String>) -> Result<Self, ValidationError> {
+        let s = value.into();
+        if !is_did_string(&s) {
+            return Err(ValidationError::from_issues(vec![ValidationIssue::new(
+                "Invalid DID format",
+            )]));
+        }
+        Ok(Self(s))
+    }
+
+    /// Borrow the DID as a string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Consume self and return the inner String.
+    pub fn into_string(self) -> String {
+        self.0
+    }
+}
+
+impl DidKeyId {
+    /// Validate a candidate DID key id.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] when the value is neither a DID URL
+    /// nor a relative reference, or when its fragment portion is missing
+    /// or contains characters outside `[A-Za-z0-9.-_:%]`.
+    pub fn parse(value: impl Into<String>) -> Result<Self, ValidationError> {
+        let s = value.into();
+        if !is_did_key_id(&s) {
+            return Err(ValidationError::from_issues(vec![ValidationIssue::new(
+                "Invalid DID Key ID format: invalid or missing fragment",
+            )]));
+        }
+        Ok(Self(s))
+    }
+
+    /// Borrow the key id as a string slice.
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+
+    /// Consume self and return the inner String.
+    pub fn into_string(self) -> String {
+        self.0
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Verification method enums
+// ---------------------------------------------------------------------------
+
+/// Verification method `type` keyword.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum VerificationMethodType {
+    /// Sentinel for absent / unrecognised type. Matches the TS export.
+    Undefined,
+    /// `JsonWebKey` verification method as per the JOSE register.
+    JsonWebKey,
+}
+
+/// JWK `kty` (key type).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum KeyType {
+    /// Elliptic curve key.
+    EC,
+    /// RSA key.
+    RSA,
+    /// Symmetric octet key.
+    #[allow(non_camel_case_types)]
+    oct,
+    /// CFRG octet key pair (Ed25519, X25519, …).
+    OKP,
+}
+
+/// JWK `crv` (curve) — uses serde rename to keep the TS spelling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum CurveType {
+    /// Edwards curve used for EdDSA signatures.
+    Ed25519,
+    /// Montgomery curve used for ECDH.
+    X25519,
+    /// Midnight's Jubjub curve.
+    Jubjub,
+    /// NIST P-256 curve.
+    #[serde(rename = "P-256")]
+    P256,
+    /// Bitcoin's secp256k1 curve.
+    #[serde(rename = "secp256k1")]
+    Secp256k1,
+    /// BLS12-381 curve, group G1.
+    BLS12381G1,
+    /// BLS12-381 curve, group G2.
+    BLS12381G2,
+}
+
+/// Verification relationship keyword (authentication, assertionMethod, …).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum VerificationMethodRelation {
+    /// Sentinel for absent / unrecognised relation.
+    Undefined,
+    /// `authentication` proves the controller's identity.
+    Authentication,
+    /// `assertionMethod` issues verifiable credentials.
+    AssertionMethod,
+    /// `keyAgreement` performs ECDH key exchange.
+    KeyAgreement,
+    /// `capabilityInvocation` invokes capabilities.
+    CapabilityInvocation,
+    /// `capabilityDelegation` delegates capabilities.
+    CapabilityDelegation,
+}
+
+// ---------------------------------------------------------------------------
+// JWK
+// ---------------------------------------------------------------------------
+
+/// JWK coordinate selector used by [`public_key_jwk_coordinate_byte_length`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PublicKeyJwkCoordinate {
+    /// `x` coordinate (always present).
+    X,
+    /// `y` coordinate (present only for EC keys).
+    Y,
+}
+
+/// Byte length of a JWK coordinate for a `(kty, crv)` profile.
+///
+/// Returns `None` for unsupported `(kty, crv, coordinate)` triples — same
+/// semantics as the TS helper.
+#[must_use]
+pub fn public_key_jwk_coordinate_byte_length(
+    kty: KeyType,
+    crv: CurveType,
+    coordinate: PublicKeyJwkCoordinate,
+) -> Option<usize> {
+    use CurveType::*;
+    use PublicKeyJwkCoordinate::*;
+    match coordinate {
+        X => match crv {
+            Ed25519 | X25519 | Jubjub | P256 | Secp256k1 => Some(32),
+            BLS12381G1 if kty == KeyType::OKP => Some(48),
+            BLS12381G2 if kty == KeyType::OKP => Some(96),
+            _ => None,
+        },
+        Y => match kty {
+            KeyType::EC => Some(32),
+            _ => None,
+        },
+    }
+}
+
+/// Public-key JWK (DID-Core: no private `d` material allowed).
+///
+/// R1 step 4a: deserialisation runs the same validation as
+/// [`Self::new`] via `#[serde(try_from = "PublicKeyJwkWire")]` —
+/// JSON-loaded values cannot be in an invalid state. The
+/// `PublicKeyJwkWire` shim is a structurally-identical helper used
+/// only for serde wire format; its [`TryFrom`] impl delegates to
+/// `Self::new`.
+///
+/// R1 step 4c: fields are private; use [`Self::new`] to construct
+/// and the [`Self::kty`] / [`Self::crv`] / [`Self::x`] / [`Self::y`]
+/// / [`Self::extensions`] accessors to read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "PublicKeyJwkWire")]
+pub struct PublicKeyJwk {
+    kty: KeyType,
+    crv: CurveType,
+    x: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    y: Option<String>,
+    #[serde(flatten)]
+    extensions: BTreeMap<String, JsonValue>,
+}
+
+/// Wire-format shim for [`PublicKeyJwk`] deserialisation. The shim
+/// has the same field shape as [`PublicKeyJwk`] but `#[derive]`s its
+/// `Deserialize` straight from serde — meaning the JSON wire format
+/// is byte-identical. The `TryFrom<PublicKeyJwkWire> for PublicKeyJwk`
+/// impl below routes through [`PublicKeyJwk::new`], so validation
+/// runs at the deserialisation gate.
+///
+/// R1 step 4a; private to the crate (serde's `try_from` resolves it
+/// at attribute expansion time).
+#[derive(Deserialize)]
+pub(crate) struct PublicKeyJwkWire {
+    kty: KeyType,
+    crv: CurveType,
+    x: String,
+    #[serde(default)]
+    y: Option<String>,
+    #[serde(flatten)]
+    extensions: BTreeMap<String, JsonValue>,
+}
+
+impl TryFrom<PublicKeyJwkWire> for PublicKeyJwk {
+    type Error = ValidationError;
+    fn try_from(w: PublicKeyJwkWire) -> Result<Self, Self::Error> {
+        PublicKeyJwk::new(NewPublicKeyJwk {
+            kty: w.kty,
+            crv: w.crv,
+            x: w.x,
+            y: w.y,
+            extensions: w.extensions,
+        })
+    }
+}
+
+/// Parameters for [`PublicKeyJwk::new`]. Mirrors the field shape of
+/// [`PublicKeyJwk`] but carries no validation — `::new` is the gate.
+///
+/// R1 step 4a: separate "raw input" from "validated value".
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewPublicKeyJwk {
+    /// Key type.
+    pub kty: KeyType,
+    /// Curve.
+    pub crv: CurveType,
+    /// X coordinate (base64url).
+    pub x: String,
+    /// Optional Y coordinate (base64url).
+    pub y: Option<String>,
+    /// Catch-all for additional public-only JWK members so we don't
+    /// drop resolver-specific keywords on the floor.
+    pub extensions: BTreeMap<String, JsonValue>,
+}
+
+impl PublicKeyJwk {
+    /// Construct a `PublicKeyJwk` from raw inputs, running the
+    /// W3C-compliant validation (no private key material; OKP/EC
+    /// kty-crv coherence; coordinate lengths) at the gate.
+    ///
+    /// R1 step 4a: this is the preferred constructor. Returns
+    /// [`ValidationError`] (step 6 will swap to a domain-specific
+    /// `VerificationError`) if any invariant is violated.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] when the input carries private key
+    /// material in `extensions`, when the `kty`/`crv` pair is not a
+    /// supported combination, when the `y` coordinate presence is
+    /// inconsistent with `kty`, or when `x` / `y` are not canonical
+    /// base64url of the expected coordinate length.
+    pub fn new(params: NewPublicKeyJwk) -> Result<Self, ValidationError> {
+        let jwk = Self {
+            kty: params.kty,
+            crv: params.crv,
+            x: params.x,
+            y: params.y,
+            extensions: params.extensions,
+        };
+        jwk.validate()?;
+        Ok(jwk)
+    }
+
+    /// Borrow the `kty` (key type).
+    #[must_use]
+    pub fn kty(&self) -> KeyType {
+        self.kty
+    }
+
+    /// Borrow the `crv` (curve).
+    #[must_use]
+    pub fn crv(&self) -> CurveType {
+        self.crv
+    }
+
+    /// Borrow the base64url-encoded `x` coordinate.
+    pub fn x(&self) -> &str {
+        &self.x
+    }
+
+    /// Borrow the optional base64url-encoded `y` coordinate.
+    pub fn y(&self) -> Option<&str> {
+        self.y.as_deref()
+    }
+
+    /// Borrow the catch-all extension map (additional public JWK
+    /// keywords carried alongside the canonical fields).
+    pub fn extensions(&self) -> &BTreeMap<String, JsonValue> {
+        &self.extensions
+    }
+
+    /// Run all JWK validation checks. Returns the structured list of issues.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] when [`Self::collect_issues`] yields a
+    /// non-empty list — the same conditions enforced at construction time
+    /// (see [`Self::new`]).
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        let issues = self.collect_issues();
+        if issues.is_empty() {
+            Ok(())
+        } else {
+            Err(ValidationError::from_issues(issues))
+        }
+    }
+
+    /// Variant of [`Self::validate`] that returns issues without bundling them
+    /// into a [`ValidationError`]. Useful when a caller wants to collect
+    /// issues from several values into one error.
+    #[must_use]
+    pub fn collect_issues(&self) -> Vec<ValidationIssue> {
+        let mut issues = Vec::new();
+        if self.extensions.contains_key("d") {
+            issues.push(ValidationIssue::new(
+                "publicKeyJwk must not include private key material",
+            ));
+        }
+        // OKP-curve restrictions.
+        let okp_curves = matches!(
+            self.crv,
+            CurveType::Ed25519 | CurveType::X25519 | CurveType::BLS12381G1 | CurveType::BLS12381G2
+        );
+        if matches!(self.kty, KeyType::OKP) && !okp_curves {
+            issues.push(ValidationIssue::new(
+                "OKP keys must use the Ed25519, X25519, BLS12381G1, or BLS12381G2 curve",
+            ));
+        }
+        let ec_curves = matches!(self.crv, CurveType::Jubjub | CurveType::P256 | CurveType::Secp256k1);
+        if matches!(self.kty, KeyType::EC) && !ec_curves {
+            issues.push(ValidationIssue::new(
+                "EC keys must use Jubjub, P-256, or secp256k1 curve",
+            ));
+        }
+        match (self.kty, self.y.is_some()) {
+            (KeyType::OKP, true) => issues.push(ValidationIssue::new("OKP keys must not include a y coordinate")),
+            (KeyType::EC, false) | (KeyType::RSA, false) | (KeyType::oct, false) => {
+                issues.push(ValidationIssue::new("Non-OKP keys must include a y coordinate"));
+            }
+            _ => {}
+        }
+        if let Some(expected_x) = public_key_jwk_coordinate_byte_length(self.kty, self.crv, PublicKeyJwkCoordinate::X) {
+            if decode_base64url_bytes(&self.x, expected_x, "publicKeyJwk.x").is_err() {
+                issues.push(ValidationIssue::new(
+                    "publicKeyJwk.x must be canonical base64url for the supported curve length",
+                ));
+            }
+        }
+        if let Some(y) = &self.y {
+            if let Some(expected_y) =
+                public_key_jwk_coordinate_byte_length(self.kty, self.crv, PublicKeyJwkCoordinate::Y)
+            {
+                if decode_base64url_bytes(y, expected_y, "publicKeyJwk.y").is_err() {
+                    issues.push(ValidationIssue::new(
+                        "publicKeyJwk.y must be canonical base64url for the supported curve length",
+                    ));
+                }
+            }
+        }
+        issues
+    }
+
+    /// Convenience helper: decode the `x` coordinate to bytes (canonical
+    /// length-checked decode). Returns a [`CodecError`] if the value is not a
+    /// canonical base64url string of the expected length.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`CodecError`] when the stored `x` coordinate is not
+    /// canonical base64url of the expected byte length for the JWK's
+    /// `(kty, crv)` profile.
+    pub fn decode_x(&self) -> Result<Vec<u8>, CodecError> {
+        let expected = public_key_jwk_coordinate_byte_length(self.kty, self.crv, PublicKeyJwkCoordinate::X)
+            .unwrap_or(self.x.len());
+        decode_base64url_bytes(&self.x, expected, "publicKeyJwk.x")
+    }
+}
+
+// ---------------------------------------------------------------------------
+// VerificationMethod and Service
+// ---------------------------------------------------------------------------
+
+/// Verification method entry. Matches the TS `VerificationMethod` shape.
+///
+/// R1 step 4c: fields are private; use [`Self::new`] to construct and
+/// the [`Self::id`] / [`Self::type_`] / [`Self::controller`] /
+/// [`Self::public_key_jwk`] accessors to read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct VerificationMethod {
+    id: DidKeyId,
+    #[serde(rename = "type")]
+    type_: VerificationMethodType,
+    controller: DidString,
+    #[serde(rename = "publicKeyJwk")]
+    public_key_jwk: PublicKeyJwk,
+}
+
+/// Parameters for [`VerificationMethod::new`]. Mirrors the field
+/// shape of [`VerificationMethod`] but carries no validation —
+/// `::new` is the gate.
+///
+/// R1 step 4a: separates "raw input" from "validated value". The
+/// legacy `CreateVerificationMethodParams` helper this replaced was
+/// retired in v0.3.0; field shape is preserved here, with
+/// `public_key_jwk` already a typed `PublicKeyJwk`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewVerificationMethod {
+    /// Key id (DID URL with fragment).
+    pub id: String,
+    /// Method type keyword.
+    pub type_: VerificationMethodType,
+    /// Controller DID.
+    pub controller: String,
+    /// Embedded public JWK.
+    pub public_key_jwk: PublicKeyJwk,
+}
+
+impl VerificationMethod {
+    /// Construct a `VerificationMethod` from raw inputs, running the
+    /// W3C-compliant validation (id format, controller DID format,
+    /// embedded JWK validity) at the gate.
+    ///
+    /// R1 step 4a/4c: this is the only constructor. The legacy
+    /// `create_verification_method` free function was retired in v0.3.0.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] when `id` is not a valid DID key id
+    /// (see [`DidKeyId::parse`]), when `controller` is not a valid bare
+    /// DID (see [`DidString::parse`]), or when the embedded JWK fails
+    /// validation (see [`PublicKeyJwk::new`]).
+    pub fn new(input: NewVerificationMethod) -> Result<Self, ValidationError> {
+        let vm = Self {
+            id: DidKeyId::parse(input.id)?,
+            type_: input.type_,
+            controller: DidString::parse(input.controller)?,
+            public_key_jwk: input.public_key_jwk,
+        };
+        vm.validate()?;
+        Ok(vm)
+    }
+
+    /// Borrow the verification-method id.
+    pub fn id(&self) -> &DidKeyId {
+        &self.id
+    }
+
+    /// Borrow the method type keyword.
+    pub fn type_(&self) -> VerificationMethodType {
+        self.type_
+    }
+
+    /// Borrow the controller DID.
+    pub fn controller(&self) -> &DidString {
+        &self.controller
+    }
+
+    /// Borrow the embedded public-key JWK.
+    pub fn public_key_jwk(&self) -> &PublicKeyJwk {
+        &self.public_key_jwk
+    }
+
+    /// Validate this method's id, controller, and embedded JWK.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] aggregating any issues found in `id`,
+    /// `controller`, or the embedded JWK (see [`PublicKeyJwk::collect_issues`]).
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        let mut issues = Vec::new();
+        if !is_did_key_id(self.id.as_str()) {
+            issues.push(ValidationIssue::new(
+                "Invalid DID Key ID format: invalid or missing fragment",
+            ));
+        }
+        if !is_did_string(self.controller.as_str()) {
+            issues.push(ValidationIssue::new("Invalid DID format"));
+        }
+        issues.extend(self.public_key_jwk.collect_issues());
+        if issues.is_empty() {
+            Ok(())
+        } else {
+            Err(ValidationError::from_issues(issues))
+        }
+    }
+}
+
+/// `serviceEndpoint` — a URI string, an object, or a heterogeneous array.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ServiceEndpoint {
+    /// Single URI.
+    Uri(String),
+    /// Inline object (e.g. for routing-key services).
+    Object(serde_json::Map<String, JsonValue>),
+    /// Array of entries (each is a URI or an inline object).
+    Array(Vec<ServiceEndpointArrayEntry>),
+}
+
+/// Entry inside a [`ServiceEndpoint::Array`].
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ServiceEndpointArrayEntry {
+    /// URI string.
+    Uri(String),
+    /// Inline object.
+    Object(serde_json::Map<String, JsonValue>),
+}
+
+/// `service.type` — either a single string or an array of strings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum ServiceType {
+    /// Single type.
+    One(String),
+    /// Multiple types.
+    Many(Vec<String>),
+}
+
+/// Service entry on a DID Document.
+///
+/// R1 step 4c: fields are private; use [`Self::new`] to construct and
+/// the [`Self::id`] / [`Self::type_`] / [`Self::service_endpoint`]
+/// accessors to read.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Service {
+    id: String,
+    #[serde(rename = "type")]
+    type_: ServiceType,
+    #[serde(rename = "serviceEndpoint")]
+    service_endpoint: ServiceEndpoint,
+}
+
+/// Parameters for [`Service::new`]. Mirrors the field shape of
+/// [`Service`] but carries no validation — `::new` is the gate.
+///
+/// R1 step 4a: separates "raw input" from "validated value". The
+/// legacy `CreateServiceParams` helper this replaced was retired in
+/// v0.3.0.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NewService {
+    /// Either a DID URL or a relative reference (`#fragment`).
+    pub id: String,
+    /// Service type keyword(s).
+    pub type_: ServiceType,
+    /// Endpoint(s).
+    pub service_endpoint: ServiceEndpoint,
+}
+
+impl Service {
+    /// Construct a `Service` from raw inputs, running the W3C
+    /// structural validation (id is a DID URL or relative reference,
+    /// type is non-empty, endpoint is well-formed) at the gate and
+    /// normalising the endpoint shape as part of construction.
+    ///
+    /// R1 step 4a/4c: this is the only constructor. The legacy
+    /// `create_service` free function was retired in v0.3.0.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] when `id` is neither a DID URL nor a
+    /// relative reference, or when `type_` is empty (single empty string
+    /// or empty array).
+    pub fn new(input: NewService) -> Result<Self, ValidationError> {
+        let mut svc = Self {
+            id: input.id,
+            type_: input.type_,
+            service_endpoint: input.service_endpoint,
+        };
+        svc.validate()?;
+        svc.service_endpoint = normalize_service_endpoint(svc.service_endpoint);
+        Ok(svc)
+    }
+
+    /// Borrow the service id.
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// Borrow the service type keyword(s).
+    pub fn type_(&self) -> &ServiceType {
+        &self.type_
+    }
+
+    /// Borrow the service endpoint(s).
+    pub fn service_endpoint(&self) -> &ServiceEndpoint {
+        &self.service_endpoint
+    }
+
+    /// Run id and serviceEndpoint structural checks. Endpoint normalization
+    /// is handled separately via [`normalize_service_endpoint`].
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] when the `id` is neither a DID URL
+    /// nor a relative reference, or when `type` is empty.
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        let mut issues = Vec::new();
+        if !is_did_url(&self.id) && !is_relative_reference(&self.id) {
+            issues.push(ValidationIssue::new(
+                "Service id must be a DID URL or relative reference",
+            ));
+        }
+        match &self.type_ {
+            ServiceType::One(s) if s.is_empty() => issues.push(ValidationIssue::new("service type must not be empty")),
+            ServiceType::Many(types) if types.is_empty() => {
+                issues.push(ValidationIssue::new("service type must be a non-empty array"))
+            }
+            _ => {}
+        }
+        if issues.is_empty() {
+            Ok(())
+        } else {
+            Err(ValidationError::from_issues(issues))
+        }
+    }
+}
+
+fn normalize_endpoint_value(value: JsonValue) -> JsonValue {
+    match value {
+        JsonValue::String(s) => JsonValue::String(normalize_uri_string(&s)),
+        JsonValue::Array(items) => JsonValue::Array(items.into_iter().map(normalize_endpoint_value).collect()),
+        JsonValue::Object(map) => {
+            JsonValue::Object(map.into_iter().map(|(k, v)| (k, normalize_endpoint_value(v))).collect())
+        }
+        other => other,
+    }
+}
+
+/// Normalize URIs nested anywhere inside a service endpoint value.
+///
+/// String endpoints are normalized directly; arrays and objects are walked
+/// recursively. Matches `normalizeServiceEndpoint` in TS.
+#[must_use]
+pub fn normalize_service_endpoint(endpoint: ServiceEndpoint) -> ServiceEndpoint {
+    match endpoint {
+        ServiceEndpoint::Uri(s) => ServiceEndpoint::Uri(normalize_uri_string(&s)),
+        ServiceEndpoint::Object(map) => {
+            let normalized = map
+                .into_iter()
+                .map(|(k, v)| (k, normalize_endpoint_value(v)))
+                .collect::<serde_json::Map<_, _>>();
+            ServiceEndpoint::Object(normalized)
+        }
+        ServiceEndpoint::Array(entries) => ServiceEndpoint::Array(
+            entries
+                .into_iter()
+                .map(|entry| match entry {
+                    ServiceEndpointArrayEntry::Uri(s) => ServiceEndpointArrayEntry::Uri(normalize_uri_string(&s)),
+                    ServiceEndpointArrayEntry::Object(map) => {
+                        let normalized = map
+                            .into_iter()
+                            .map(|(k, v)| (k, normalize_endpoint_value(v)))
+                            .collect::<serde_json::Map<_, _>>();
+                        ServiceEndpointArrayEntry::Object(normalized)
+                    }
+                })
+                .collect(),
+        ),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DID Document
+// ---------------------------------------------------------------------------
+
+/// `@context` — either a single string or an array of strings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum DocumentContext {
+    /// Single context IRI.
+    One(String),
+    /// Multiple context IRIs.
+    Many(Vec<String>),
+}
+
+/// `controller` — either a DID or an array of DIDs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum Controller {
+    /// Single controller DID.
+    One(DidString),
+    /// Multiple controller DIDs.
+    Many(Vec<DidString>),
+}
+
+/// W3C DID Document.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DidDocument {
+    /// JSON-LD context(s).
+    #[serde(rename = "@context")]
+    pub context: DocumentContext,
+    /// DID Subject.
+    pub id: DidString,
+    /// Optional alternate identifiers.
+    #[serde(rename = "alsoKnownAs", default, skip_serializing_if = "Option::is_none")]
+    pub also_known_as: Option<Vec<String>>,
+    /// Optional controller(s).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub controller: Option<Controller>,
+    /// Verification methods.
+    #[serde(rename = "verificationMethod", default, skip_serializing_if = "Option::is_none")]
+    pub verification_method: Option<Vec<VerificationMethod>>,
+    /// Authentication relation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authentication: Option<Vec<DidKeyId>>,
+    /// Assertion-method relation.
+    #[serde(rename = "assertionMethod", default, skip_serializing_if = "Option::is_none")]
+    pub assertion_method: Option<Vec<DidKeyId>>,
+    /// Key-agreement relation.
+    #[serde(rename = "keyAgreement", default, skip_serializing_if = "Option::is_none")]
+    pub key_agreement: Option<Vec<DidKeyId>>,
+    /// Capability invocation relation.
+    #[serde(rename = "capabilityInvocation", default, skip_serializing_if = "Option::is_none")]
+    pub capability_invocation: Option<Vec<DidKeyId>>,
+    /// Capability delegation relation.
+    #[serde(rename = "capabilityDelegation", default, skip_serializing_if = "Option::is_none")]
+    pub capability_delegation: Option<Vec<DidKeyId>>,
+    /// Service endpoints.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service: Option<Vec<Service>>,
+    /// Unrecognised properties (DID-Core allows extension).
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, JsonValue>,
+}
+
+impl DidDocument {
+    /// Run W3C DID Core cross-consistency validation. Returns a structured
+    /// list of issues; the message text matches the TS port.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] when verification-method ids are not
+    /// unique, when any verification-relation entry references a missing
+    /// verification method, when service ids are not unique, or when a
+    /// service endpoint array contains duplicate entries.
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        let mut issues = Vec::new();
+        let normalized = self.clone().with_normalized_service_endpoints();
+
+        let empty: Vec<VerificationMethod> = Vec::new();
+        let vms: &[VerificationMethod] = normalized.verification_method.as_deref().unwrap_or(&empty);
+        let mut seen_vm_ids: HashMap<String, usize> = HashMap::new();
+        let did = normalized.id.as_str();
+        let canonicalize = |value: &str| -> String {
+            if value.starts_with("did:") {
+                value.to_owned()
+            } else if let Some(rest) = value.strip_prefix('#') {
+                format!("{did}#{rest}")
+            } else {
+                format!("{did}#{value}")
+            }
+        };
+        for (index, vm) in vms.iter().enumerate() {
+            let canonical = canonicalize(vm.id.as_str());
+            if let std::collections::hash_map::Entry::Vacant(entry) = seen_vm_ids.entry(canonical) {
+                entry.insert(index);
+            } else {
+                issues.push(ValidationIssue::at(
+                    "verificationMethod ids must be unique",
+                    vec!["verificationMethod".into(), index.to_string(), "id".into()],
+                ));
+            }
+        }
+
+        let check_relation = |name: &str, values: Option<&Vec<DidKeyId>>, issues: &mut Vec<ValidationIssue>| {
+            if let Some(values) = values {
+                let mut seen = HashSet::new();
+                for (index, value) in values.iter().enumerate() {
+                    let canonical = canonicalize(value.as_str());
+                    if !seen.insert(canonical.clone()) {
+                        issues.push(ValidationIssue::at(
+                            format!("{name} must not contain duplicate entries"),
+                            vec![name.into(), index.to_string()],
+                        ));
+                        continue;
+                    }
+                    if !seen_vm_ids.contains_key(&canonical) {
+                        issues.push(ValidationIssue::at(
+                            format!("{name} references a verificationMethod id that does not exist"),
+                            vec![name.into(), index.to_string()],
+                        ));
+                    }
+                }
+            }
+        };
+        check_relation("authentication", normalized.authentication.as_ref(), &mut issues);
+        check_relation("assertionMethod", normalized.assertion_method.as_ref(), &mut issues);
+        check_relation("keyAgreement", normalized.key_agreement.as_ref(), &mut issues);
+        check_relation(
+            "capabilityInvocation",
+            normalized.capability_invocation.as_ref(),
+            &mut issues,
+        );
+        check_relation(
+            "capabilityDelegation",
+            normalized.capability_delegation.as_ref(),
+            &mut issues,
+        );
+
+        if let Some(services) = &normalized.service {
+            let mut seen_ids = HashSet::new();
+            for (index, service) in services.iter().enumerate() {
+                if !seen_ids.insert(service.id.clone()) {
+                    issues.push(ValidationIssue::at(
+                        "service ids must be unique",
+                        vec!["service".into(), index.to_string(), "id".into()],
+                    ));
+                }
+                let endpoints: Vec<JsonValue> = match &service.service_endpoint {
+                    ServiceEndpoint::Uri(s) => vec![JsonValue::String(s.clone())],
+                    ServiceEndpoint::Object(obj) => vec![JsonValue::Object(obj.clone())],
+                    ServiceEndpoint::Array(items) => items
+                        .iter()
+                        .map(|item| match item {
+                            ServiceEndpointArrayEntry::Uri(s) => JsonValue::String(s.clone()),
+                            ServiceEndpointArrayEntry::Object(obj) => JsonValue::Object(obj.clone()),
+                        })
+                        .collect(),
+                };
+                let mut seen_endpoints = HashSet::new();
+                for (endpoint_index, endpoint) in endpoints.iter().enumerate() {
+                    let key = endpoint.to_string();
+                    if !seen_endpoints.insert(key) {
+                        issues.push(ValidationIssue::at(
+                            "serviceEndpoint values must be unique",
+                            vec![
+                                "service".into(),
+                                index.to_string(),
+                                "serviceEndpoint".into(),
+                                endpoint_index.to_string(),
+                            ],
+                        ));
+                    }
+                }
+            }
+        }
+
+        if issues.is_empty() {
+            Ok(())
+        } else {
+            Err(ValidationError::from_issues(issues))
+        }
+    }
+
+    /// Return a copy of this document with every service endpoint URI run
+    /// through [`normalize_service_endpoint`].
+    #[must_use]
+    pub fn with_normalized_service_endpoints(mut self) -> Self {
+        if let Some(services) = self.service.as_mut() {
+            for service in services.iter_mut() {
+                let endpoint = std::mem::replace(&mut service.service_endpoint, ServiceEndpoint::Uri(String::new()));
+                service.service_endpoint = normalize_service_endpoint(endpoint);
+            }
+        }
+        self
+    }
+}
+
+// ---------------------------------------------------------------------------
+// DID Document metadata + resolution
+// ---------------------------------------------------------------------------
+
+/// DID Document metadata block, as returned alongside resolution.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct DidDocumentMetadata {
+    /// ISO 8601 datetime when the DID was created.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub created: Option<String>,
+    /// ISO 8601 datetime when the DID was last updated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub updated: Option<String>,
+    /// Whether the DID is currently deactivated.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deactivated: Option<bool>,
+    /// Opaque version identifier.
+    #[serde(rename = "versionId", default, skip_serializing_if = "Option::is_none")]
+    pub version_id: Option<String>,
+    /// Hint about when the next update is expected.
+    #[serde(rename = "nextUpdate", default, skip_serializing_if = "Option::is_none")]
+    pub next_update: Option<String>,
+    /// Hint about the next version id.
+    #[serde(rename = "nextVersionId", default, skip_serializing_if = "Option::is_none")]
+    pub next_version_id: Option<String>,
+    /// DIDs that point to the same subject.
+    #[serde(rename = "equivalentId", default, skip_serializing_if = "Option::is_none")]
+    pub equivalent_id: Option<Vec<String>>,
+    /// Canonical form of this DID.
+    #[serde(rename = "canonicalId", default, skip_serializing_if = "Option::is_none")]
+    pub canonical_id: Option<String>,
+    /// Extension keywords.
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, JsonValue>,
+}
+
+/// Known DID document/resolution media types.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum KnownDidMediaType {
+    /// `application/did+ld+json` — DID document JSON-LD.
+    #[serde(rename = "application/did+ld+json")]
+    DidLdJson,
+    /// `application/did+json` — DID document plain JSON.
+    #[serde(rename = "application/did+json")]
+    DidJson,
+    /// `application/ld+json` — Resolution-result JSON-LD envelope.
+    #[serde(rename = "application/ld+json")]
+    LdJson,
+    /// `application/json` — Resolution-result plain JSON envelope.
+    #[serde(rename = "application/json")]
+    Json,
+}
+
+/// Known DID resolution error codes (registry-only subset).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum KnownDidResolutionErrorCode {
+    /// The supplied DID was syntactically invalid.
+    InvalidDid,
+    /// Resolver hit an unexpected internal error.
+    InternalError,
+    /// The supplied public key was invalid.
+    InvalidPublicKey,
+    /// The supplied public key length was invalid.
+    InvalidPublicKeyLength,
+    /// The supplied public key type was invalid.
+    InvalidPublicKeyType,
+    /// The DID method is not supported by this resolver.
+    MethodNotSupported,
+    /// Certificate is not allowed.
+    NotAllowedCertificate,
+    /// Global duplicate-key constraint violated.
+    NotAllowedGlobalDuplicateKey,
+    /// Key type is not allowed.
+    NotAllowedKeyType,
+    /// Locally-derived keys are not allowed.
+    NotAllowedLocalDerivedKey,
+    /// Local duplicate-key constraint violated.
+    NotAllowedLocalDuplicateKey,
+    /// DID method is not allowed.
+    NotAllowedMethod,
+    /// Verification-method type is not allowed.
+    NotAllowedVerificationMethodType,
+    /// DID was not found.
+    NotFound,
+    /// The requested representation is not supported.
+    RepresentationNotSupported,
+    /// Public-key type is not supported.
+    UnsupportedPublicKeyType,
+}
+
+/// Generic DID resolution error keyword — accepts registered extension values.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct DidResolutionErrorCode(pub String);
+
+impl DidResolutionErrorCode {
+    /// Validate the keyword shape (`[A-Za-z][A-Za-z0-9]*`).
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] when the code is empty or contains
+    /// any character outside the `[A-Za-z][A-Za-z0-9]*` keyword grammar.
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        let bytes = self.0.as_bytes();
+        let valid =
+            !bytes.is_empty() && bytes[0].is_ascii_alphabetic() && bytes.iter().all(|b| b.is_ascii_alphanumeric());
+        if !valid {
+            Err(ValidationError::from_issues(vec![ValidationIssue::new(
+                "DID resolution error must match [A-Za-z][A-Za-z0-9]*",
+            )]))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+/// `didResolutionMetadata` envelope.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct DidResolutionMetadata {
+    /// Content type the resolver returned.
+    #[serde(rename = "contentType", default, skip_serializing_if = "Option::is_none")]
+    pub content_type: Option<KnownDidMediaType>,
+    /// Optional structured error keyword.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error: Option<DidResolutionErrorCode>,
+    /// Extension keywords.
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, JsonValue>,
+}
+
+/// W3C DID resolution result.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DidResolutionResult {
+    /// Optional JSON-LD context(s).
+    #[serde(rename = "@context", default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<DocumentContext>,
+    /// Resolved DID document.
+    #[serde(rename = "didDocument", default, skip_serializing_if = "Option::is_none")]
+    pub did_document: Option<DidDocument>,
+    /// Metadata for the resolved DID document.
+    #[serde(rename = "didDocumentMetadata")]
+    pub did_document_metadata: DidDocumentMetadata,
+    /// Metadata for the resolution operation itself.
+    #[serde(rename = "didResolutionMetadata")]
+    pub did_resolution_metadata: DidResolutionMetadata,
+    /// Extension keywords.
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, JsonValue>,
+}
+
+// ---------------------------------------------------------------------------
+// Parsing + creation helpers
+// ---------------------------------------------------------------------------
+
+/// Validate a candidate JSON DID Document.
+///
+/// # Errors
+///
+/// Returns a [`ValidationError`] when the JSON shape does not deserialise
+/// into a [`DidDocument`] or when [`DidDocument::validate`] surfaces any
+/// cross-consistency issue.
+pub fn parse_did_document(value: JsonValue) -> Result<DidDocument, ValidationError> {
+    let doc: DidDocument = serde_json::from_value(value).map_err(|e| {
+        ValidationError::from_issues(vec![ValidationIssue::new(format!(
+            "DID Document JSON shape is invalid: {e}"
+        ))])
+    })?;
+    doc.validate()?;
+    Ok(doc.with_normalized_service_endpoints())
+}
+
+/// Validate a candidate DID URL string.
+///
+/// # Errors
+///
+/// Forwards the [`ValidationError`] from [`DidUrl::parse`].
+pub fn parse_did_url(input: &str) -> Result<DidUrl, ValidationError> {
+    DidUrl::parse(input)
+}
+
+/// Validate a candidate DID Key ID string.
+///
+/// # Errors
+///
+/// Forwards the [`ValidationError`] from [`DidKeyId::parse`].
+pub fn parse_did_key_id(input: &str) -> Result<DidKeyId, ValidationError> {
+    DidKeyId::parse(input)
+}
+
+/// Validate a candidate bare DID string.
+///
+/// # Errors
+///
+/// Forwards the [`ValidationError`] from [`DidString::parse`].
+pub fn parse_did(input: &str) -> Result<DidString, ValidationError> {
+    DidString::parse(input)
+}
+
+/// Validate and return a verification method.
+///
+/// # Errors
+///
+/// Returns a [`ValidationError`] when the JSON shape does not deserialise
+/// into a [`VerificationMethod`] or when [`VerificationMethod::validate`]
+/// fails.
+pub fn parse_verification_method(value: JsonValue) -> Result<VerificationMethod, ValidationError> {
+    let vm: VerificationMethod = serde_json::from_value(value).map_err(|e| {
+        ValidationError::from_issues(vec![ValidationIssue::new(format!(
+            "VerificationMethod JSON shape is invalid: {e}"
+        ))])
+    })?;
+    vm.validate()?;
+    Ok(vm)
+}
+
+/// Validate and return a service entry (with normalized endpoints).
+///
+/// # Errors
+///
+/// Returns a [`ValidationError`] when the JSON shape does not deserialise
+/// into a [`Service`] or when [`Service::validate`] fails.
+pub fn parse_service(value: JsonValue) -> Result<Service, ValidationError> {
+    let mut svc: Service = serde_json::from_value(value).map_err(|e| {
+        ValidationError::from_issues(vec![ValidationIssue::new(format!(
+            "Service JSON shape is invalid: {e}"
+        ))])
+    })?;
+    svc.validate()?;
+    svc.service_endpoint = normalize_service_endpoint(svc.service_endpoint);
+    Ok(svc)
+}
+
+// R1 step 4c: the legacy `create_verification_method` /
+// `create_service` free functions and their `Create*Params` structs
+// have been retired. Use [`VerificationMethod::new`] +
+// [`NewVerificationMethod`] and [`Service::new`] + [`NewService`]
+// instead. (`create_did_document` is still provided alongside the
+// builder.)
+
+/// Parameters accepted by [`create_did_document`].
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct CreateDidDocumentParams {
+    /// Subject DID.
+    pub id: String,
+    /// Optional `@context`. Defaults to `https://www.w3.org/ns/did/v1`.
+    pub context: Option<DocumentContext>,
+    /// Optional alternate identifiers.
+    pub also_known_as: Option<Vec<String>>,
+    /// Optional controller(s).
+    pub controller: Option<Controller>,
+    /// Verification methods.
+    pub verification_method: Option<Vec<VerificationMethod>>,
+    /// Authentication relation.
+    pub authentication: Option<Vec<DidKeyId>>,
+    /// Assertion-method relation.
+    pub assertion_method: Option<Vec<DidKeyId>>,
+    /// Key-agreement relation.
+    pub key_agreement: Option<Vec<DidKeyId>>,
+    /// Capability invocation relation.
+    pub capability_invocation: Option<Vec<DidKeyId>>,
+    /// Capability delegation relation.
+    pub capability_delegation: Option<Vec<DidKeyId>>,
+    /// Service endpoints.
+    pub service: Option<Vec<Service>>,
+}
+
+/// Fluent builder for [`DidDocument`] (R1 step 5).
+///
+/// The builder accumulates verification methods, services, and
+/// relations incrementally, then runs full cross-reference
+/// validation on [`DidDocumentBuilder::build`]:
+///
+/// - Subject DID is well-formed.
+/// - No duplicate verification-method ids.
+/// - No duplicate service ids.
+/// - Every `authentication` / `assertion_method` / `key_agreement` /
+///   `capability_invocation` / `capability_delegation` entry refers
+///   to a verification method that's present in the document.
+///
+/// Example:
+///
+/// ```ignore
+/// let key = VerificationMethod::new(NewVerificationMethod {
+///     id: "did:midnight:testnet:abc#key-1".to_string(),
+///     type_: VerificationMethodType::JsonWebKey,
+///     controller: "did:midnight:testnet:abc".to_string(),
+///     public_key_jwk: jwk,
+/// })?;
+/// let key_id = key.id.clone();
+///
+/// let doc = DidDocumentBuilder::new("did:midnight:testnet:abc")
+///     .add_verification_method(key)
+///     .authentication(vec![key_id])
+///     .build()?;
+/// ```
+///
+/// Defaults `@context` to the standard DID-Core context when unset.
+#[derive(Debug, Clone)]
+pub struct DidDocumentBuilder {
+    id: String,
+    context: Option<DocumentContext>,
+    also_known_as: Option<Vec<String>>,
+    controller: Option<Controller>,
+    verification_method: Vec<VerificationMethod>,
+    authentication: Vec<DidKeyId>,
+    assertion_method: Vec<DidKeyId>,
+    key_agreement: Vec<DidKeyId>,
+    capability_invocation: Vec<DidKeyId>,
+    capability_delegation: Vec<DidKeyId>,
+    service: Vec<Service>,
+}
+
+impl DidDocumentBuilder {
+    /// Start a new builder for the given DID subject string. Subject
+    /// validity is checked at [`Self::build`] time so the builder
+    /// itself never fails — the construction path remains fluent.
+    #[must_use]
+    pub fn new(id: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            context: None,
+            also_known_as: None,
+            controller: None,
+            verification_method: Vec::new(),
+            authentication: Vec::new(),
+            assertion_method: Vec::new(),
+            key_agreement: Vec::new(),
+            capability_invocation: Vec::new(),
+            capability_delegation: Vec::new(),
+            service: Vec::new(),
+        }
+    }
+
+    /// Override the JSON-LD `@context`. Defaults to
+    /// `https://www.w3.org/ns/did/v1` when unset.
+    #[must_use]
+    pub fn context(mut self, ctx: DocumentContext) -> Self {
+        self.context = Some(ctx);
+        self
+    }
+
+    /// Set `alsoKnownAs` aliases.
+    #[must_use]
+    pub fn also_known_as(mut self, aliases: Vec<String>) -> Self {
+        self.also_known_as = Some(aliases);
+        self
+    }
+
+    /// Set the `controller` (single DID or array).
+    #[must_use]
+    pub fn controller(mut self, c: Controller) -> Self {
+        self.controller = Some(c);
+        self
+    }
+
+    /// Append a verification method. Cross-reference validation on
+    /// [`Self::build`] ensures no duplicates and that any relation
+    /// referencing this VM's id finds it.
+    #[must_use]
+    pub fn add_verification_method(mut self, vm: VerificationMethod) -> Self {
+        self.verification_method.push(vm);
+        self
+    }
+
+    /// Append a service. [`Self::build`] enforces no duplicates by id.
+    #[must_use]
+    pub fn add_service(mut self, svc: Service) -> Self {
+        self.service.push(svc);
+        self
+    }
+
+    /// Set the `authentication` relation. Each id must reference an
+    /// existing verification method.
+    #[must_use]
+    pub fn authentication(mut self, ids: Vec<DidKeyId>) -> Self {
+        self.authentication = ids;
+        self
+    }
+
+    /// Set the `assertionMethod` relation.
+    #[must_use]
+    pub fn assertion_method(mut self, ids: Vec<DidKeyId>) -> Self {
+        self.assertion_method = ids;
+        self
+    }
+
+    /// Set the `keyAgreement` relation.
+    #[must_use]
+    pub fn key_agreement(mut self, ids: Vec<DidKeyId>) -> Self {
+        self.key_agreement = ids;
+        self
+    }
+
+    /// Set the `capabilityInvocation` relation.
+    #[must_use]
+    pub fn capability_invocation(mut self, ids: Vec<DidKeyId>) -> Self {
+        self.capability_invocation = ids;
+        self
+    }
+
+    /// Set the `capabilityDelegation` relation.
+    #[must_use]
+    pub fn capability_delegation(mut self, ids: Vec<DidKeyId>) -> Self {
+        self.capability_delegation = ids;
+        self
+    }
+
+    /// Consume the builder and produce a fully-validated
+    /// [`DidDocument`]. Runs:
+    ///
+    /// 1. Subject DID parse;
+    /// 2. Per-VM and per-Service validation (already done at their
+    ///    own `::new`, but re-checked defensively);
+    /// 3. Duplicate-id detection across VMs and across services;
+    /// 4. Cross-reference: every relation id must match a VM id;
+    /// 5. Existing `DidDocument::validate()` runs as the final
+    ///    catch-all.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ValidationError`] when the subject DID is not parseable
+    /// (see [`DidString::parse`]), when verification-method or service ids
+    /// are duplicated, when any verification-relation id does not match a
+    /// known verification method, or when the final
+    /// [`DidDocument::validate`] catch-all surfaces additional issues.
+    pub fn build(self) -> Result<DidDocument, ValidationError> {
+        let subject = DidString::parse(self.id)?;
+
+        let mut issues: Vec<ValidationIssue> = Vec::new();
+
+        // Duplicate verification-method ids.
+        let mut vm_id_set = std::collections::HashSet::new();
+        for vm in &self.verification_method {
+            if !vm_id_set.insert(vm.id.as_str().to_owned()) {
+                issues.push(ValidationIssue::new(format!(
+                    "duplicate verificationMethod id: {}",
+                    vm.id.as_str()
+                )));
+            }
+        }
+
+        // Duplicate service ids.
+        let mut svc_id_set = std::collections::HashSet::new();
+        for svc in &self.service {
+            if !svc_id_set.insert(svc.id.clone()) {
+                issues.push(ValidationIssue::new(format!("duplicate service id: {}", svc.id)));
+            }
+        }
+
+        // Cross-reference: every relation id ∈ vm_id_set.
+        for (kind, ids) in [
+            ("authentication", &self.authentication),
+            ("assertionMethod", &self.assertion_method),
+            ("keyAgreement", &self.key_agreement),
+            ("capabilityInvocation", &self.capability_invocation),
+            ("capabilityDelegation", &self.capability_delegation),
+        ] {
+            for id in ids {
+                if !vm_id_set.contains(id.as_str()) {
+                    issues.push(ValidationIssue::new(format!(
+                        "{kind} references unknown verificationMethod id: {}",
+                        id.as_str()
+                    )));
+                }
+            }
+        }
+
+        if !issues.is_empty() {
+            return Err(ValidationError::from_issues(issues));
+        }
+
+        let doc = DidDocument {
+            context: self
+                .context
+                .unwrap_or(DocumentContext::One("https://www.w3.org/ns/did/v1".into())),
+            id: subject,
+            also_known_as: self.also_known_as,
+            controller: self.controller,
+            verification_method: if self.verification_method.is_empty() {
+                None
+            } else {
+                Some(self.verification_method)
+            },
+            authentication: if self.authentication.is_empty() {
+                None
+            } else {
+                Some(self.authentication)
+            },
+            assertion_method: if self.assertion_method.is_empty() {
+                None
+            } else {
+                Some(self.assertion_method)
+            },
+            key_agreement: if self.key_agreement.is_empty() {
+                None
+            } else {
+                Some(self.key_agreement)
+            },
+            capability_invocation: if self.capability_invocation.is_empty() {
+                None
+            } else {
+                Some(self.capability_invocation)
+            },
+            capability_delegation: if self.capability_delegation.is_empty() {
+                None
+            } else {
+                Some(self.capability_delegation)
+            },
+            service: if self.service.is_empty() {
+                None
+            } else {
+                Some(self.service)
+            },
+            extra: BTreeMap::new(),
+        };
+        // Final defensive validation — catches anything the builder
+        // didn't pre-screen (e.g. context-edge cases the legacy
+        // `validate()` knows about).
+        doc.validate()?;
+        Ok(doc.with_normalized_service_endpoints())
+    }
+}
+
+/// Build a fully validated DID Document. Defaults `@context` to the standard
+/// DID-Core context when unset.
+///
+/// # Errors
+///
+/// Returns a [`ValidationError`] when the subject DID does not parse or
+/// when [`DidDocument::validate`] surfaces any cross-consistency issue.
+pub fn create_did_document(params: CreateDidDocumentParams) -> Result<DidDocument, ValidationError> {
+    let doc = DidDocument {
+        context: params
+            .context
+            .unwrap_or(DocumentContext::One("https://www.w3.org/ns/did/v1".into())),
+        id: DidString::parse(params.id)?,
+        also_known_as: params.also_known_as,
+        controller: params.controller,
+        verification_method: params.verification_method,
+        authentication: params.authentication,
+        assertion_method: params.assertion_method,
+        key_agreement: params.key_agreement,
+        capability_invocation: params.capability_invocation,
+        capability_delegation: params.capability_delegation,
+        service: params.service,
+        extra: BTreeMap::new(),
+    };
+    doc.validate()?;
+    Ok(doc.with_normalized_service_endpoints())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn did_string_validates_basic_shape() {
+        assert!(DidString::parse("did:example:1234").is_ok());
+        assert!(DidString::parse("did:example:1234#frag").is_err());
+        assert!(DidString::parse("not-a-did").is_err());
+    }
+
+    #[test]
+    fn did_key_id_accepts_fragments() {
+        assert!(DidKeyId::parse("#key-1").is_ok());
+        assert!(DidKeyId::parse("did:example:1#key-1").is_ok());
+        assert!(DidKeyId::parse("did:example:1").is_err());
+    }
+}

@@ -1,0 +1,35 @@
+[package]
+name                   = "midnight-did-api"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+authors.workspace      = true
+repository.workspace   = true
+homepage               = "https://github.com/yshyn-iohk/midnight-did-rs"
+documentation          = "https://docs.rs/midnight-did-api"
+readme                 = "README.md"
+description            = "Async operation builders, DID resolver, and contract abstraction traits for the Midnight DID method."
+keywords               = ["midnight", "did", "vc", "ssi", "async"]
+categories             = ["cryptography", "asynchronous"]
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+midnight-did-domain  = { workspace = true }
+midnight-did-method  = { workspace = true }
+# R2-2 (v0.4.0): operation builders take `&Contract<B>` directly. The
+# ledger-shape types (MapMutation, LedgerVerificationMethod, …) now live
+# in the runtime crate and are re-exported through `contract` for the
+# api's backward-compatible surface.
+midnight-did-runtime = { workspace = true }
+serde                = { workspace = true }
+serde_json           = { workspace = true }
+hex                  = { workspace = true }
+thiserror            = "2"
+async-trait          = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt", "sync"] }

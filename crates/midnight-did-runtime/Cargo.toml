@@ -1,0 +1,64 @@
+[package]
+name         = "midnight-did-runtime"
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+authors.workspace      = true
+repository.workspace   = true
+description  = "Codegen target for the Midnight DID Method — generated.rs, witnesses, controller key. Renamed from `midnight-did` (now an umbrella crate) per ADR 0003."
+
+[lib]
+name = "midnight_did_runtime"
+path = "src/lib.rs"
+
+[dependencies]
+# The compact-runtime symbol the generated contract code calls into. The
+# `path = "third_party/compact/runtime-rs"` (declared in the workspace) is
+# materialised by `nix develop`'s shellHook from the codegen-rust compact
+# flake input, alongside the sibling `runtime-rs-macros` crate.
+compact-runtime = { workspace = true }
+
+# midnight-ledger workspace deps the generated lib.rs (transitively, via
+# compact-runtime) needs at link time. Listed explicitly so `cargo build`
+# fails with a clearer error if a symlink under third_party/midnight-ledger/
+# goes missing.
+#
+# Pruned 2026-06-29: cargo-machete flagged six ledger-stack crates as
+# unused at the source level — they are pulled in transitively via
+# `compact-runtime`'s own manifest, so declaring them explicitly here was
+# redundant. The two kept below are the load-bearing pair the generated.rs
+# path-mounted output names directly; they stay as an early-failure
+# tripwire when a third_party/midnight-ledger symlink is missing.
+midnight-base-crypto      = { workspace = true }
+midnight-onchain-runtime  = { workspace = true }
+
+# Sibling first-party crates — R2-2 (v0.4.0) lifts ledger-shape types
+# (`DidLedgerSnapshot`, `LedgerVerificationMethod`, `MapMutation`, …) into
+# this crate so `DidContractCall` can carry them as variant payloads. The
+# api crate now re-exports these for downstream consumers.
+midnight-did-domain = { workspace = true }
+midnight-did-method = { workspace = true }
+
+# R2-1: async-trait for the I/O-substrate `Backend` trait. Pinned to
+# 0.1 to match the version already used by `midnight-did-api`.
+async-trait               = "0.1"
+
+# R2-2 (v0.4.0): `DidContractCall` is serialised into `BuiltTx::bytes`
+# via serde_json so the recording backend can decode the typed envelope.
+# blake2 is used by the recording backend to synthesise a deterministic
+# `FinalizedTxData::tx_hash` from the envelope bytes.
+serde       = { workspace = true }
+serde_json  = { workspace = true }
+hex         = { workspace = true }
+blake2      = "0.10"
+
+# R2-3 (architecture-audit Rec #1): validating constructors on
+# `JubjubPointHex`, `SchnorrJubjubSignature`, and `SchnorrJubjubDigest`
+# return a typed `ValidationError`.
+thiserror   = "2"
+
+[dev-dependencies]
+# R2-1: tokio runtime for the `Backend` impls' unit tests (current-thread,
+# no IO).
+tokio = { version = "1", features = ["macros", "rt"] }

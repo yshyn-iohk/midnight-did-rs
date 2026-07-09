@@ -1,0 +1,26 @@
+# Cargo
+/target
+/target-gen
+**/*.rs.bk
+
+# Nix build outputs
+/result
+/result-*
+.direnv
+
+# Symlinks materialised by the devshell (not vendored)
+/third_party/midnight-ledger
+/third_party/midnight-zk
+/third_party/compact-runtime-rs
+/third_party/compact/
+
+# Editor / OS
+.idea
+.vscode
+.DS_Store
+
+# Internal planning / research notes — lives in Obsidian, not the repo.
+docs/superpowers/
+
+# IDE / Gemini CLI scratch
+.antigravitycli/

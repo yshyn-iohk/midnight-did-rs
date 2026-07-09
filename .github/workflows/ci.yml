@@ -1,0 +1,261 @@
+name: CI
+
+# CI for the midnight-did-rs workspace. Gates the four functional crates
+# and the umbrella crate:
+#
+#   - midnight-did-domain : pure data model, zero midnight-* deps
+#   - midnight-did-method : Midnight method profile (did:midnight:*)
+#   - midnight-did-api    : operation builders on Contract<B: Backend>
+#                           (DidContract trait retired in v0.4.0 — ADR 0008)
+#   - midnight-did        : umbrella re-export crate
+#
+# The codegen-target crate `midnight-did-runtime` is intentionally NOT in
+# the pre-check / test / wasm-build jobs — it transitively depends on
+# halo2 / arkworks crates that do not compile to wasm. It IS exercised
+# by the codegen-check job below (regenerates generated.rs under the
+# flake-pinned compactc and asserts no drift).
+#
+# Every job runs under `nix develop`. The devshell's shellHook
+# materialises path-mounted third_party crates (midnight-ledger,
+# midnight-zk, compact/runtime-rs, compact/runtime-rs-macros) that the
+# workspace Cargo.toml references — without them, bare `cargo` fails at
+# `cargo metadata`.
+#
+# Four jobs:
+#   - pre-check:    cargo fmt --check + clippy -D warnings on Linux.
+#   - test:         cargo test --locked on Linux AND macOS.
+#   - wasm-build:   cargo build --target wasm32-unknown-unknown on the
+#                   four wasm-clean crates.
+#   - codegen-check: regen generated.rs against flake-pinned compactc,
+#                    assert no drift.
+
+on:
+  pull_request:
+    paths:
+      - "crates/midnight-did-domain/**"
+      - "crates/midnight-did-method/**"
+      - "crates/midnight-did-api/**"
+      - "crates/midnight-did/**"
+      - "crates/midnight-did-runtime/src/contract/**"
+      - "third_party/midnight-did/**"
+      - "flake.nix"
+      - "flake.lock"
+      - "Justfile"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ci.yml"
+      - "nix/**"
+  push:
+    branches:
+      - main
+    paths:
+      - "crates/midnight-did-domain/**"
+      - "crates/midnight-did-method/**"
+      - "crates/midnight-did-api/**"
+      - "crates/midnight-did/**"
+      - "crates/midnight-did-runtime/src/contract/**"
+      - "third_party/midnight-did/**"
+      - "flake.nix"
+      - "flake.lock"
+      - "Justfile"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ci.yml"
+      - "nix/**"
+  workflow_dispatch:
+
+# Default to no permissions; each job opts in to the minimum it needs.
+permissions: {}
+
+# Cancel superseded runs on the same PR / branch.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  CARGO_NET_RETRY: 10
+  RUST_BACKTRACE: short
+  RUSTUP_MAX_RETRIES: 10
+
+jobs:
+  # Fast pre-checks: formatting + lints. Linux only.
+  pre-check:
+    name: Format + Clippy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Magic Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Cache Cargo registry and git trees
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Check formatting (domain + method + api + umbrella)
+        run: |
+          nix develop --command bash -c '
+            cargo fmt -p midnight-did-domain --check &&
+            cargo fmt -p midnight-did-method --check &&
+            cargo fmt -p midnight-did-api    --check &&
+            cargo fmt -p midnight-did        --check
+          '
+
+      - name: Run Clippy on midnight-did-domain
+        run: nix develop --command cargo clippy -p midnight-did-domain --all-targets -- -D warnings
+
+      - name: Run Clippy on midnight-did-method
+        run: nix develop --command cargo clippy -p midnight-did-method --all-targets -- -D warnings
+
+      - name: Run Clippy on midnight-did-api
+        run: nix develop --command cargo clippy -p midnight-did-api --all-targets -- -D warnings
+
+      - name: Run Clippy on midnight-did (umbrella)
+        run: nix develop --command cargo clippy -p midnight-did --all-targets -- -D warnings
+
+  # Test matrix on Linux + macOS.
+  test:
+    name: Test ${{ matrix.os }}
+    needs: pre-check
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Magic Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Cache Cargo registry and git trees
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+          key: ${{ runner.os }}-cargo-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Cache target directory
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: target
+          key: ${{ runner.os }}-target-did-${{ hashFiles('Cargo.lock', 'crates/midnight-did-domain/**', 'crates/midnight-did-method/**', 'crates/midnight-did-api/**') }}
+          restore-keys: |
+            ${{ runner.os }}-target-did-
+
+      - name: Run tests (domain + method + api)
+        run: nix develop --command cargo test -p midnight-did-domain -p midnight-did-method -p midnight-did-api --locked
+
+  # Build the wasm-clean crates against wasm32-unknown-unknown.
+  wasm-build:
+    name: WASM target build
+    needs: pre-check
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Magic Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Cache Cargo registry and wasm target
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-wasm-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-wasm-
+
+      # Only midnight-did-domain is wasm-clean today.
+      #   - method     -> midnight-base-crypto + compact-runtime (blst)
+      #   - api        -> midnight-did-runtime  (blst via halo2)
+      #   - umbrella   -> transitively depends on api/runtime
+      # All three drag the `blst` C bindings into the wasm32 build, and
+      # blst's `no_asm.h` fails to compile without an `llimb_t` typedef
+      # on wasm targets. Restoring method/api/umbrella to the wasm gate
+      # is a re-architecting task (feature-gate the crypto deps behind
+      # a non-wasm cfg or expose the domain-shape mapping via a smaller
+      # runtime-agnostic surface).
+      - name: Build wasm32-unknown-unknown (domain)
+        run: |
+          nix develop --command cargo build --target wasm32-unknown-unknown \
+            -p midnight-did-domain \
+            --locked
+
+  # Regenerate generated.rs from did.compact via the flake-pinned compactc
+  # and assert no drift against the committed file.
+  #
+  # Manual-trigger only (workflow_dispatch). This job needs the private
+  # `midnightntwrk/midnight-did` submodule which the default GITHUB_TOKEN
+  # cannot access from this fork. To make it run automatically on PRs:
+  #
+  #   1. Create a fine-grained PAT with `contents: read` on
+  #      `midnightntwrk/midnight-did`.
+  #   2. Add it as repo secret `MIDNIGHT_DID_PAT`.
+  #   3. Wire `submodules: recursive` + `token: ${{ secrets.MIDNIGHT_DID_PAT }}`
+  #      into the checkout step below.
+  #   4. Change the `if:` guard to `if: ${{ secrets.MIDNIGHT_DID_PAT != '' }}`.
+  #
+  # Until then, run `just codegen-check` locally under `nix develop` to
+  # exercise this gate.
+  codegen-check:
+    name: Codegen regen check (did.compact -> generated.rs)
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    needs: pre-check
+    permissions:
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: recursive
+          # Once MIDNIGHT_DID_PAT is configured, uncomment to enable
+          # private-submodule fetch:
+          # token: ${{ secrets.MIDNIGHT_DID_PAT }}
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Magic Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
+      - name: Run codegen and assert no drift
+        run: nix develop --command just codegen-check

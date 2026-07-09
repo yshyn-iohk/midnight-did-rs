@@ -1,0 +1,4 @@
+[submodule "third_party/midnight-did"]
+	path = third_party/midnight-did
+	url = https://github.com/midnightntwrk/midnight-did.git
+	branch = main
