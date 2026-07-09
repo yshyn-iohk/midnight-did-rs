@@ -5,14 +5,16 @@ name: CI
 #
 #   - midnight-did-domain : pure data model, zero midnight-* deps
 #   - midnight-did-method : Midnight method profile (did:midnight:*)
-#   - midnight-did-api    : DidContract trait + operation builders
+#   - midnight-did-api    : operation builders on Contract<B: Backend>
+#                           (DidContract trait retired in v0.4.0 — ADR 0008)
 #   - midnight-did        : umbrella re-export crate
 #
 # The codegen-target crate `midnight-did-runtime` is intentionally NOT in
-# CI — it is blocked on an upstream halo2 ParamsKZG API skew in the
-# Nix-pinned midnight-transient-crypto snapshot. Once the flake input
-# resolves, a follow-up will add it (likely behind a `nix build` step
-# rather than bare cargo). Tracked under DID-P2-2.
+# the pre-check / test / wasm-build jobs — it transitively depends on
+# halo2 / arkworks crates that neither compile to wasm nor build without
+# the patched `midnight-proofs` via `nix develop`. It IS exercised by
+# the codegen-check job below (regenerates generated.rs under the
+# flake-pinned compactc and asserts no drift).
 #
 # Three jobs:
 #   - pre-check:  cargo fmt --check + clippy -D warnings on Linux. Fast (<3 min).
