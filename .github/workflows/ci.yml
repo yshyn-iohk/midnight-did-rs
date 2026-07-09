@@ -203,17 +203,20 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-wasm-
 
-      # Only domain + method are wasm-clean today. The api crate gained a
-      # dep on midnight-did-runtime in v0.4.0 (R2 contract abstraction —
-      # ADR 0008), which transitively pulls in midnight-transient-crypto
-      # → blst → C bindings that do not compile to wasm32. Restoring api
-      # + umbrella to the wasm surface is a separate re-architecting
-      # question (feature-gate the runtime dep behind a non-wasm cfg).
-      - name: Build wasm32-unknown-unknown (domain + method)
+      # Only midnight-did-domain is wasm-clean today.
+      #   - method     -> midnight-base-crypto + compact-runtime (blst)
+      #   - api        -> midnight-did-runtime  (blst via halo2)
+      #   - umbrella   -> transitively depends on api/runtime
+      # All three drag the `blst` C bindings into the wasm32 build, and
+      # blst's `no_asm.h` fails to compile without an `llimb_t` typedef
+      # on wasm targets. Restoring method/api/umbrella to the wasm gate
+      # is a re-architecting task (feature-gate the crypto deps behind
+      # a non-wasm cfg or expose the domain-shape mapping via a smaller
+      # runtime-agnostic surface).
+      - name: Build wasm32-unknown-unknown (domain)
         run: |
           nix develop --command cargo build --target wasm32-unknown-unknown \
             -p midnight-did-domain \
-            -p midnight-did-method \
             --locked
 
   # Regenerate generated.rs from did.compact via the flake-pinned compactc
