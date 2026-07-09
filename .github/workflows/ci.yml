@@ -203,13 +203,17 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-wasm-
 
-      - name: Build wasm32-unknown-unknown (domain + method + api + umbrella)
+      # Only domain + method are wasm-clean today. The api crate gained a
+      # dep on midnight-did-runtime in v0.4.0 (R2 contract abstraction —
+      # ADR 0008), which transitively pulls in midnight-transient-crypto
+      # → blst → C bindings that do not compile to wasm32. Restoring api
+      # + umbrella to the wasm surface is a separate re-architecting
+      # question (feature-gate the runtime dep behind a non-wasm cfg).
+      - name: Build wasm32-unknown-unknown (domain + method)
         run: |
           nix develop --command cargo build --target wasm32-unknown-unknown \
             -p midnight-did-domain \
             -p midnight-did-method \
-            -p midnight-did-api \
-            -p midnight-did \
             --locked
 
   # Regenerate generated.rs from did.compact via the flake-pinned compactc
