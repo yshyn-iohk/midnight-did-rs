@@ -1,4 +1,4 @@
 [submodule "third_party/midnight-did"]
 	path = third_party/midnight-did
-	url = /Users/ysh/iohk/midnight-identity-workspace/midnight-did
-	branch = develop
+	url = https://github.com/midnightntwrk/midnight-did.git
+	branch = main

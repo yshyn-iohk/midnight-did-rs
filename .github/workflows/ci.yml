@@ -89,8 +89,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          submodules: recursive
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
@@ -147,8 +145,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          submodules: recursive
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
@@ -188,8 +184,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-        with:
-          submodules: recursive
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
@@ -223,8 +217,23 @@ jobs:
 
   # Regenerate generated.rs from did.compact via the flake-pinned compactc
   # and assert no drift against the committed file.
+  #
+  # Manual-trigger only (workflow_dispatch). This job needs the private
+  # `midnightntwrk/midnight-did` submodule which the default GITHUB_TOKEN
+  # cannot access from this fork. To make it run automatically on PRs:
+  #
+  #   1. Create a fine-grained PAT with `contents: read` on
+  #      `midnightntwrk/midnight-did`.
+  #   2. Add it as repo secret `MIDNIGHT_DID_PAT`.
+  #   3. Wire `submodules: recursive` + `token: ${{ secrets.MIDNIGHT_DID_PAT }}`
+  #      into the checkout step below.
+  #   4. Change the `if:` guard to `if: ${{ secrets.MIDNIGHT_DID_PAT != '' }}`.
+  #
+  # Until then, run `just codegen-check` locally under `nix develop` to
+  # exercise this gate.
   codegen-check:
     name: Codegen regen check (did.compact -> generated.rs)
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     needs: pre-check
     permissions:
       contents: read
@@ -234,6 +243,9 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
           submodules: recursive
+          # Once MIDNIGHT_DID_PAT is configured, uncomment to enable
+          # private-submodule fetch:
+          # token: ${{ secrets.MIDNIGHT_DID_PAT }}
 
       - name: Install Nix
         uses: DeterminateSystems/nix-installer-action@main
