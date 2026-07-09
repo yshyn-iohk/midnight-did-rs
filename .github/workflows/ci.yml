@@ -205,15 +205,12 @@ jobs:
 
       - name: Build wasm32-unknown-unknown (domain + method + api + umbrella)
         run: |
-          nix develop --command bash -c '
-            rustup target add wasm32-unknown-unknown &&
-            cargo build --target wasm32-unknown-unknown \
-              -p midnight-did-domain \
-              -p midnight-did-method \
-              -p midnight-did-api \
-              -p midnight-did \
-              --locked
-          '
+          nix develop --command cargo build --target wasm32-unknown-unknown \
+            -p midnight-did-domain \
+            -p midnight-did-method \
+            -p midnight-did-api \
+            -p midnight-did \
+            --locked
 
   # Regenerate generated.rs from did.compact via the flake-pinned compactc
   # and assert no drift against the committed file.
