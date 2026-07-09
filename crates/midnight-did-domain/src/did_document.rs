@@ -1566,10 +1566,7 @@ impl DidDocumentBuilder {
         let mut svc_id_set = std::collections::HashSet::new();
         for svc in &self.service {
             if !svc_id_set.insert(svc.id.clone()) {
-                issues.push(ValidationIssue::new(format!(
-                    "duplicate service id: {}",
-                    svc.id
-                )));
+                issues.push(ValidationIssue::new(format!("duplicate service id: {}", svc.id)));
             }
         }
 

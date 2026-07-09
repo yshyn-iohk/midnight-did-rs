@@ -26,7 +26,6 @@ use std::future::Future;
 use std::pin::Pin;
 
 use crate::did_document::{DidDocument, DidString};
-
 pub use crate::did_document::{DidDocumentMetadata, DidResolutionResult};
 
 /// Boxed, type-erased dynamic future used by `MidnightDidResolver` so it can
