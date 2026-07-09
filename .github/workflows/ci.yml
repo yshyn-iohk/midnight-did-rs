@@ -11,20 +11,23 @@ name: CI
 #
 # The codegen-target crate `midnight-did-runtime` is intentionally NOT in
 # the pre-check / test / wasm-build jobs — it transitively depends on
-# halo2 / arkworks crates that neither compile to wasm nor build without
-# the patched `midnight-proofs` via `nix develop`. It IS exercised by
-# the codegen-check job below (regenerates generated.rs under the
+# halo2 / arkworks crates that do not compile to wasm. It IS exercised
+# by the codegen-check job below (regenerates generated.rs under the
 # flake-pinned compactc and asserts no drift).
 #
-# Three jobs:
-#   - pre-check:  cargo fmt --check + clippy -D warnings on Linux. Fast (<3 min).
-#   - test:       cargo test --locked on Linux AND macOS to catch platform
-#                 -dependent encoding / hashing / serialization bugs.
-#   - wasm-build: cargo build --target wasm32-unknown-unknown on the two
-#                 wasm-clean crates. Enforces the architecture-doc claim
-#                 that midnight-did-domain + midnight-did-api are
-#                 runtime-agnostic and free of midnight-* deps. Catches
-#                 the moment a transitive dep regresses wasm support.
+# Every job runs under `nix develop`. The devshell's shellHook
+# materialises path-mounted third_party crates (midnight-ledger,
+# midnight-zk, compact/runtime-rs, compact/runtime-rs-macros) that the
+# workspace Cargo.toml references — without them, bare `cargo` fails at
+# `cargo metadata`.
+#
+# Four jobs:
+#   - pre-check:    cargo fmt --check + clippy -D warnings on Linux.
+#   - test:         cargo test --locked on Linux AND macOS.
+#   - wasm-build:   cargo build --target wasm32-unknown-unknown on the
+#                   four wasm-clean crates.
+#   - codegen-check: regen generated.rs against flake-pinned compactc,
+#                    assert no drift.
 
 on:
   pull_request:
@@ -41,6 +44,7 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/ci.yml"
+      - "nix/**"
   push:
     branches:
       - main
@@ -57,30 +61,26 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/ci.yml"
+      - "nix/**"
   workflow_dispatch:
 
 # Default to no permissions; each job opts in to the minimum it needs.
-# This shrinks the blast radius if any third-party action is compromised.
 permissions: {}
 
-# Cancel superseded runs on the same PR / branch — saves CI minutes when
-# a contributor pushes a fixup commit before the previous run finishes.
+# Cancel superseded runs on the same PR / branch.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 env:
   CARGO_TERM_COLOR: always
-  # Incremental compilation buys nothing in CI (no warm target dir between
-  # runs) and just bloats the cache.
   CARGO_INCREMENTAL: 0
   CARGO_NET_RETRY: 10
   RUST_BACKTRACE: short
   RUSTUP_MAX_RETRIES: 10
 
 jobs:
-  # Fast pre-checks: formatting + lints. Gated on Linux only — fmt/clippy
-  # output does not vary by host OS, so doubling the matrix here is waste.
+  # Fast pre-checks: formatting + lints. Linux only.
   pre-check:
     name: Format + Clippy
     runs-on: ubuntu-latest
@@ -89,17 +89,15 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: recursive
 
-      - name: Install Rust toolchain (stable)
-        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable (branch)
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
 
-      - name: Install Rust components
-        run: rustup component add rustfmt clippy
+      - name: Magic Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
 
-      # Cache only the registry index + crate cache + git deps. The target/
-      # directory is NOT cached here because the pre-check job builds very
-      # little (clippy reuses any cargo-check artifacts but does not need
-      # a full target/ to be cheap).
       - name: Cache Cargo registry and git trees
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -111,35 +109,28 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      # `cargo fmt -p <pkg> --check` scopes formatting to the gated set.
-      # midnight-did-runtime is excluded because its halo2 dep skew blocks
-      # the build.
       - name: Check formatting (domain + method + api + umbrella)
         run: |
-          cargo fmt -p midnight-did-domain --check
-          cargo fmt -p midnight-did-method --check
-          cargo fmt -p midnight-did-api    --check
-          cargo fmt -p midnight-did        --check
+          nix develop --command bash -c '
+            cargo fmt -p midnight-did-domain --check &&
+            cargo fmt -p midnight-did-method --check &&
+            cargo fmt -p midnight-did-api    --check &&
+            cargo fmt -p midnight-did        --check
+          '
 
-      # Clippy with -D warnings turns lints into errors. Scoped per-crate
-      # for the same reason as fmt above.
       - name: Run Clippy on midnight-did-domain
-        run: cargo clippy -p midnight-did-domain --all-targets -- -D warnings
+        run: nix develop --command cargo clippy -p midnight-did-domain --all-targets -- -D warnings
 
       - name: Run Clippy on midnight-did-method
-        run: cargo clippy -p midnight-did-method --all-targets -- -D warnings
+        run: nix develop --command cargo clippy -p midnight-did-method --all-targets -- -D warnings
 
       - name: Run Clippy on midnight-did-api
-        run: cargo clippy -p midnight-did-api --all-targets -- -D warnings
+        run: nix develop --command cargo clippy -p midnight-did-api --all-targets -- -D warnings
 
       - name: Run Clippy on midnight-did (umbrella)
-        run: cargo clippy -p midnight-did --all-targets -- -D warnings
+        run: nix develop --command cargo clippy -p midnight-did --all-targets -- -D warnings
 
-  # Test matrix on Linux + macOS. The domain crate does its own canonical
-  # JSON / multibase / multihash encoding, which is exactly the kind of
-  # code that breaks on subtle platform differences (locale, default hash
-  # word size, filesystem case sensitivity). Running both OSes is cheap
-  # insurance.
+  # Test matrix on Linux + macOS.
   test:
     name: Test ${{ matrix.os }}
     needs: pre-check
@@ -156,9 +147,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: recursive
 
-      - name: Install Rust toolchain (stable)
-        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable (branch)
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Magic Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
 
       - name: Cache Cargo registry and git trees
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
@@ -171,9 +167,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      # Separate target/ cache, keyed on Cargo.lock + crate sources so it
-      # invalidates when our code changes but is reused across unrelated
-      # PRs. `restore-keys` lets a stale-but-close cache seed a fresh one.
       - name: Cache target directory
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -182,29 +175,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-target-did-
 
-      # --locked guarantees Cargo.lock is honored bit-for-bit; a PR that
-      # forgets to commit a lockfile update will fail here rather than
-      # silently resolving to a newer transitive dep.
       - name: Run tests (domain + method + api)
-        run: cargo test -p midnight-did-domain -p midnight-did-method -p midnight-did-api --locked
+        run: nix develop --command cargo test -p midnight-did-domain -p midnight-did-method -p midnight-did-api --locked
 
   # Build the wasm-clean crates against wasm32-unknown-unknown.
-  # The architecture doc + ADR 0001 claim that midnight-did-domain,
-  # midnight-did-method, midnight-did-api, and the umbrella midnight-did
-  # are runtime-agnostic and pull no halo2 deps, which means they should
-  # compile to wasm without ceremony. This job enforces that claim: the
-  # moment a transitive dep regresses wasm support (e.g. someone pulls in
-  # a crate that uses std::process or filesystem APIs), the build fails
-  # here on PR.
-  #
-  # Pure wasm32-unknown-unknown target only — no wasm-bindgen, wasm-pack,
-  # or web-sys at this stage. JS interop is a separate concern (would
-  # belong in a thin browser-side wrapper crate, not the domain/method/api
-  # core).
-  #
-  # midnight-did-runtime is intentionally excluded — it transitively
-  # depends on halo2 / arkworks crates that do not compile to wasm.
-  # Adding it here would just rediscover that.
   wasm-build:
     name: WASM target build
     needs: pre-check
@@ -214,14 +188,15 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Install Rust toolchain (stable) with wasm32 target
-        uses: dtolnay/rust-toolchain@631a55b12751854ce901bb631d5902ceb48146f7 # stable (branch)
         with:
-          targets: wasm32-unknown-unknown
+          submodules: recursive
 
-      # Shared cache for the wasm target. Keyed separately from the
-      # host target/ cache so the two do not collide.
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Magic Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@main
+
       - name: Cache Cargo registry and wasm target
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -236,24 +211,18 @@ jobs:
 
       - name: Build wasm32-unknown-unknown (domain + method + api + umbrella)
         run: |
-          cargo build --target wasm32-unknown-unknown \
-            -p midnight-did-domain \
-            -p midnight-did-method \
-            -p midnight-did-api \
-            -p midnight-did \
-            --locked
+          nix develop --command bash -c '
+            rustup target add wasm32-unknown-unknown &&
+            cargo build --target wasm32-unknown-unknown \
+              -p midnight-did-domain \
+              -p midnight-did-method \
+              -p midnight-did-api \
+              -p midnight-did \
+              --locked
+          '
 
   # Regenerate generated.rs from did.compact via the flake-pinned compactc
-  # and assert no drift against the committed file. This is the standing
-  # gate after the codegen-correctness sweep: if the upstream compact
-  # patch set changes the emitted Rust shape, this job fails so the
-  # divergence cannot land silently.
-  #
-  # The work happens inside `nix develop` so we get the exact compactc
-  # pinned by flake.lock (input: github:yshyn-iohk/compact/codegen-rust).
-  # `just codegen-check` runs `just codegen` then `git diff --exit-code`
-  # on crates/midnight-did-runtime/src/contract and assets/keys — any
-  # byte-level drift makes git return non-zero, failing the job.
+  # and assert no drift against the committed file.
   codegen-check:
     name: Codegen regen check (did.compact -> generated.rs)
     needs: pre-check
